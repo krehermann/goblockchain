@@ -1,57 +1,49 @@
 package core
 
 import (
-	"bytes"
 	"testing"
 	"time"
 
+	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHeader_Roundtrip(t *testing.T) {
-	h := &Header{
-		Version:       1,
-		PreviousBlock: types.RandomHash(),
-		Timestamp:     uint64(time.Unix(0, 0).Unix()),
-		Height:        10,
-		Nonce:         1234,
+func randomBlock(height uint32) *Block {
+	b := &Block{
+		Header: &Header{
+			Version:           1,
+			PreviousBlockHash: types.RandomHash(),
+			Timestamp:         uint64(time.Now().Unix()),
+			Height:            height,
+		},
+		Transactions: []Transaction{
+			Transaction{
+				Data: []byte("tengo hambre"),
+			},
+		},
 	}
-
-	buf := &bytes.Buffer{}
-	assert.NoError(t, h.EncodeBinary(buf))
-
-	hDecode := &Header{}
-	assert.NoError(t, hDecode.DecodeBinary(buf))
-	assert.Equal(t, h, hDecode)
+	return b
 }
 
-func TestBlock_Encode_Decode(t *testing.T) {
-	b := &Block{
-		Header: Header{Version: 1,
-			PreviousBlock: types.RandomHash(),
-			Timestamp:     uint64(time.Unix(0, 0).Unix()),
-			Height:        10,
-			Nonce:         1234},
-		Transactions: nil,
-	}
+func TestBlock_SignAndVerify(t *testing.T) {
+	privKey := crypto.MustGeneratePrivateKey()
+	b := randomBlock(0)
 
-	buf := &bytes.Buffer{}
-	assert.NoError(t, b.EncodeBinary(buf))
+	assert.NoError(t, b.Sign(privKey))
+	assert.NoError(t, b.Verify())
 
-	bDecode := &Block{}
-	assert.NoError(t, bDecode.DecodeBinary(buf))
-}
+	// something is wrong about the signatures
+	// leave this failing test for now
+	x := randomBlock(21)
+	assert.NoError(t, x.Sign(privKey))
+	assert.NoError(t, x.Verify())
+	assert.False(t, x.Signature.Verify(x.Validator, b.MustHeaderData()))
 
-func TestBlockHash(t *testing.T) {
-	b := &Block{
-		Header: Header{Version: 1,
-			PreviousBlock: types.RandomHash(),
-			Timestamp:     uint64(time.Unix(0, 0).Unix()),
-			Height:        10,
-			Nonce:         1234},
-		Transactions: nil,
-	}
-	hsh := b.Hash()
-	assert.False(t, hsh.IsZero())
+	// change the block validator
+	wrongPrivKey := crypto.MustGeneratePrivateKey()
+	wrongPubKey := wrongPrivKey.PublicKey()
+	b.Validator = wrongPubKey
+	assert.Error(t, b.Verify())
+
 }
