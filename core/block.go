@@ -3,10 +3,8 @@ package core
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/types"
@@ -86,7 +84,6 @@ func (b *Block) MustHeaderData() []byte {
 	}
 	b.headerData = buf.Bytes()
 
-	log.Printf("header data %s", hex.EncodeToString(b.headerData))
 	//}
 	return b.headerData
 }
