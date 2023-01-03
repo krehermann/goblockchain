@@ -19,6 +19,17 @@ type Header struct {
 	Height            uint32
 }
 
+func (h *Header) MustToBytes() []byte {
+	//if b.headerData == nil {
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(h)
+	if err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
 type Block struct {
 	*Header
 	Transactions []Transaction
@@ -26,8 +37,7 @@ type Block struct {
 	Validator crypto.PublicKey
 	Signature *crypto.Signature
 	// cache of header hash
-	hash       types.Hash
-	headerData []byte
+	hash types.Hash
 }
 
 func NewBlock(h *Header, txns []Transaction) *Block {
@@ -37,8 +47,12 @@ func NewBlock(h *Header, txns []Transaction) *Block {
 	}
 }
 
+func (b *Block) AddTransaction(tx *Transaction) {
+	b.Transactions = append(b.Transactions, *tx)
+}
+
 func (b *Block) Sign(privKey crypto.PrivateKey) error {
-	sig, err := privKey.Sign(b.MustHeaderData())
+	sig, err := privKey.Sign(b.Header.MustToBytes())
 	if err != nil {
 		return err
 	}
@@ -51,8 +65,15 @@ func (b *Block) Verify() error {
 	if b.Signature == nil {
 		return fmt.Errorf("block has no signature")
 	}
-	if !b.Signature.Verify(b.Validator, b.MustHeaderData()) {
+	if !b.Signature.Verify(b.Validator, b.Header.MustToBytes()) {
 		return fmt.Errorf("invalid block signature")
+	}
+
+	for i, tx := range b.Transactions {
+		err := tx.Verify()
+		if err != nil {
+			return fmt.Errorf("block verify failed at transaction %d: %w", i, err)
+		}
 	}
 	return nil
 }
@@ -65,25 +86,11 @@ func (b *Block) Decode(r io.Reader, decoder Decoder[*Block]) error {
 	return decoder.Decode(r, b)
 }
 
-func (b *Block) Hash(hasher Hasher[*Block]) types.Hash {
+func (b *Block) Hash(hasher Hasher[*Header]) types.Hash {
 
 	if b.hash.IsZero() {
-		b.hash = hasher.Hash(b)
+		b.hash = hasher.Hash(b.Header)
 	}
 
 	return b.hash
-}
-
-func (b *Block) MustHeaderData() []byte {
-	//if b.headerData == nil {
-	buf := &bytes.Buffer{}
-	enc := gob.NewEncoder(buf)
-	err := enc.Encode(b.Header)
-	if err != nil {
-		panic(err)
-	}
-	b.headerData = buf.Bytes()
-
-	//}
-	return b.headerData
 }

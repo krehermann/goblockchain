@@ -44,6 +44,13 @@ func (bc *Blockchain) HasBlockAtHeight(h uint32) bool {
 	return h <= bc.Height()
 }
 
+func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
+	if height > bc.Height() {
+		return &Header{}, fmt.Errorf("cannot get header for block height %d: out of range %d", height, bc.Height())
+	}
+	return bc.headers[height], nil
+}
+
 func (bc *Blockchain) addGensisBlock(b *Block) error {
 	if len(bc.headers) > 0 {
 		return fmt.Errorf("addGenesisBlock: refusing to add genesis block to non-0 len chain")

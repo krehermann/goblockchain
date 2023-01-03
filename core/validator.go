@@ -21,6 +21,25 @@ func (v *BlockValidator) ValidateBlock(b *Block) error {
 		return fmt.Errorf("chain already has block(%d) with hash %s", b.Height, b.Hash(DefaultBlockHasher{}))
 	}
 
-	return b.Verify()
+	// implicitly we are only validating blocks after the genesis
+	if b.Height != v.bc.Height()+1 {
+		return fmt.Errorf("chain cannot already block with height %d because does not match expect chain height %d", b.Height, v.bc.Height())
+	}
+
+	prevHeader, err := v.bc.GetHeader(b.Height - 1)
+	if err != nil {
+		return nil
+	}
+
+	onChainHash := DefaultBlockHasher{}.Hash(prevHeader)
+	if onChainHash != b.PreviousBlockHash {
+		return fmt.Errorf("validateBlock: previous hash on chain (%s) doesn't match the value in the given block (%s)", onChainHash.String(), b.PreviousBlockHash)
+	}
+
+	err = b.Verify()
+	if err != nil {
+		return fmt.Errorf("invalid block: failed to verify: %w", err)
+	}
+	return nil
 
 }

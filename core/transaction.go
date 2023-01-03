@@ -13,7 +13,7 @@ type Transaction struct {
 	// make it fast
 
 	Data      []byte
-	PublicKey crypto.PublicKey
+	From      crypto.PublicKey
 	Signature *crypto.Signature
 }
 
@@ -30,16 +30,19 @@ func (txn *Transaction) Sign(privKey crypto.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	txn.PublicKey = privKey.PublicKey()
+	if sig == nil {
+		panic("nil signature in transaction after signing")
+	}
+	txn.From = privKey.PublicKey()
 	txn.Signature = sig
 	return nil
 }
 
 func (txn *Transaction) Verify() error {
 	if txn.Signature == nil {
-		return fmt.Errorf("transactions has no signature")
+		return fmt.Errorf("transaction has no signature")
 	}
-	ok := txn.Signature.Verify(txn.PublicKey, txn.Data)
+	ok := txn.Signature.Verify(txn.From, txn.Data)
 	if !ok {
 		return fmt.Errorf("invalid transaction signature")
 	}
