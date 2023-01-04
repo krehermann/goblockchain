@@ -3,31 +3,55 @@ package network
 import (
 	"fmt"
 	"time"
+
+	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/crypto"
+	"go.uber.org/zap"
 )
 
 type ServerOpts struct {
 	// multiple transport layers
 	Transports []Transport
+	PrivateKey *crypto.PrivateKey
+	BlockTime  time.Duration
+	TxHasher   core.Hasher[*core.Transaction]
+	Logger     *zap.Logger
 }
 
 type Server struct {
 	ServerOpts
-	rpcChan  chan RPC
-	quitChan chan struct{}
+	// if server is elected as validator, server needs to know
+	// when to consume mempool propose a block to the network
+	// probably should be len(pool) >= maxTxPerBlock || t > blocktime
+	blockTime   time.Duration
+	mempool     *TxPool
+	isValidator bool
+	rpcChan     chan RPC
+	quitChan    chan struct{}
+	logger      *zap.Logger
 }
 
 func NewServer(opts ServerOpts) *Server {
-	return &Server{
-		ServerOpts: opts,
-		rpcChan:    make(chan RPC),
-		quitChan:   make(chan struct{}, 1),
+	if opts.TxHasher == nil {
+		opts.TxHasher = &core.DefaultTxHasher{}
 	}
-
+	if opts.Logger == nil {
+		opts.Logger, _ = zap.NewDevelopment()
+	}
+	return &Server{
+		ServerOpts:  opts,
+		mempool:     NewTxPool(),
+		blockTime:   opts.BlockTime,
+		isValidator: (opts.PrivateKey != nil),
+		rpcChan:     make(chan RPC),
+		quitChan:    make(chan struct{}, 1),
+		logger:      opts.Logger,
+	}
 }
 
 func (s *Server) Start() error {
 	s.initTransports()
-	ticker := time.NewTicker(5 * time.Second)
+	blockTicker := time.NewTicker(s.blockTime)
 loop:
 	for {
 		select {
@@ -38,11 +62,43 @@ loop:
 			break loop
 
 		// prevent busy loop
-		case <-ticker.C:
-			fmt.Println("tick tock")
+		case <-blockTicker.C:
+			if s.isValidator {
+				// need to call consensus logic here
+				s.createNewBlock()
+			}
 		}
 	}
 	return nil
+}
+
+func (s *Server) handleTransaction(tx *core.Transaction) error {
+	// 2 ways for txn to come in
+	// 1. client, like a wallet creates a txn & sends the server,
+	// server puts it into the mempool
+	// 2. server broadcasts txn to connected nodes. this is really second
+	// part of the first
+	var err error
+
+	err = tx.Verify()
+	if err != nil {
+		return err
+	}
+
+	addedOk, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
+	if err != nil {
+		return err
+	}
+
+	if addedOk {
+		s.logger.Info("added tx to mempool",
+			zap.String("txn hash", tx.Hash(s.TxHasher).String()))
+	}
+	return nil
+}
+
+func (s *Server) createNewBlock() {
+	fmt.Println("creating block")
 }
 
 func (s *Server) handleRPC(msg RPC) {

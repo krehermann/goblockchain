@@ -49,6 +49,7 @@ func (h Hash) ToSlice() []byte {
 	}
 	return out
 }
+
 func (h Hash) String() string {
 	return hex.EncodeToString(h.ToSlice())
 }
