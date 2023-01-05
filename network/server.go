@@ -9,6 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	defaultBlockTime = 5 * time.Second
+)
+
 type ServerOpts struct {
 	// multiple transport layers
 	Transports []Transport
@@ -37,6 +41,9 @@ func NewServer(opts ServerOpts) *Server {
 	}
 	if opts.Logger == nil {
 		opts.Logger, _ = zap.NewDevelopment()
+	}
+	if opts.BlockTime == time.Duration(0) {
+		opts.BlockTime = defaultBlockTime
 	}
 	return &Server{
 		ServerOpts:  opts,

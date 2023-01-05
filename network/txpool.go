@@ -1,11 +1,43 @@
 package network
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/types"
 )
+
+type TxMapSorter struct {
+	txns []*core.Transaction
+}
+
+func NewTxMapSorter(txMap map[types.Hash]*core.Transaction) *TxMapSorter {
+	txns := make([]*core.Transaction, len(txMap))
+
+	i := 0
+	for _, tx := range txMap {
+		txns[i] = tx
+		i += 1
+	}
+	out := &TxMapSorter{
+		txns: txns,
+	}
+
+	sort.Sort(out)
+	return out
+
+}
+func (s *TxMapSorter) Get() []*core.Transaction {
+	return s.txns
+}
+func (s *TxMapSorter) Len() int { return len(s.txns) }
+func (s *TxMapSorter) Swap(i, j int) {
+	s.txns[i], s.txns[j] = s.txns[j], s.txns[i]
+}
+func (s *TxMapSorter) Less(i, j int) bool {
+	return s.txns[i].GetCreatedAt().Before(s.txns[j].GetCreatedAt())
+}
 
 type TxPool struct {
 	lock         sync.RWMutex
@@ -16,6 +48,12 @@ func NewTxPool() *TxPool {
 	return &TxPool{
 		transactions: make(map[types.Hash]*core.Transaction),
 	}
+}
+
+// transactions need to ordered. a simple way to do this FIFO
+// on the otherhand eth uses a priority that costs gas
+func (p *TxPool) Transactions() []*core.Transaction {
+	return NewTxMapSorter(p.transactions).Get()
 }
 
 func (p *TxPool) Len() int {

@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"io"
+	"time"
 
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/types"
@@ -17,8 +17,11 @@ type Transaction struct {
 	From      crypto.PublicKey
 	Signature *crypto.Signature
 
+	// note that these private field are not encoding
 	// cached hash
 	hash types.Hash
+	// keep track for ordering
+	createdAt time.Time
 }
 
 func NewTransaction(data []byte) *Transaction {
@@ -26,12 +29,25 @@ func NewTransaction(data []byte) *Transaction {
 		Data: data,
 	}
 }
-func (txn *Transaction) EncodeBinary(w io.Writer) error {
-	return nil
+
+func (txn *Transaction) SetCreatedAt(t time.Time) *Transaction {
+	txn.createdAt = t
+	return txn
 }
 
-func (txn *Transaction) DecodeBinary(r io.Reader) error {
-	return nil
+func (txn *Transaction) GetCreatedAt() time.Time {
+	if txn.createdAt.IsZero() {
+		txn.createdAt = time.Now()
+	}
+	return txn.createdAt
+}
+
+func (txn *Transaction) Encode(enc Encoder[*Transaction]) error {
+	return enc.Encode(txn)
+}
+
+func (txn *Transaction) Decode(dec Decoder[*Transaction]) error {
+	return dec.Decode(txn)
 }
 
 // Hash caches the first call. Subsequent changes to input Hasher have no effect

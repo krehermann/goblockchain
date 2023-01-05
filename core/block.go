@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"io"
 
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/types"
@@ -78,12 +77,12 @@ func (b *Block) Verify() error {
 	return nil
 }
 
-func (b *Block) Encode(w io.Writer, encoder Encoder[*Block]) error {
-	return encoder.Encode(w, b)
+func (b *Block) Encode(encoder Encoder[*Block]) error {
+	return encoder.Encode(b)
 }
 
-func (b *Block) Decode(r io.Reader, decoder Decoder[*Block]) error {
-	return decoder.Decode(r, b)
+func (b *Block) Decode(decoder Decoder[*Block]) error {
+	return decoder.Decode(b)
 }
 
 func (b *Block) Hash(hasher Hasher[*Header]) types.Hash {

@@ -1,26 +1,72 @@
 package core
 
 import (
+	"crypto/elliptic"
 	"encoding/gob"
 	"io"
 )
 
 type Encoder[T any] interface {
-	Encode(io.Writer, T) error
+	Encode(T) error
 }
 
 type Decoder[T any] interface {
-	Decode(io.Reader, T) error
+	Decode(T) error
 }
 
-type DefaultBlockEncoder struct{}
-
-func (dbe DefaultBlockEncoder) Encode(w io.Writer, b *Block) error {
-	return gob.NewEncoder(w).Encode(b)
+type DefaultBlockEncoder struct {
+	w io.Writer
 }
 
-type DefaultBlockDecoder struct{}
+func NewDefaultBlockEncoder(w io.Writer) *DefaultBlockEncoder {
+	return &DefaultBlockEncoder{
+		w: w,
+	}
+}
 
-func (dbe DefaultBlockDecoder) Decode(r io.Reader, b *Block) error {
-	return gob.NewDecoder(r).Decode(b)
+func (e DefaultBlockEncoder) Encode(b *Block) error {
+	return gob.NewEncoder(e.w).Encode(b)
+}
+
+type DefaultBlockDecoder struct {
+	r io.Reader
+}
+
+func NewDefaultBlockDecoder(r io.Reader) *DefaultBlockDecoder {
+	return &DefaultBlockDecoder{
+		r: r,
+	}
+}
+func (d *DefaultBlockDecoder) Decode(b *Block) error {
+	return gob.NewDecoder(d.r).Decode(b)
+}
+
+type GobTxEncoder struct {
+	w io.Writer
+}
+
+func NewGobTxEncoder(w io.Writer) *GobTxEncoder {
+	gob.Register(elliptic.P256())
+	return &GobTxEncoder{
+		w: w,
+	}
+}
+
+func (e GobTxEncoder) Encode(t *Transaction) error {
+
+	return gob.NewEncoder(e.w).Encode(t)
+}
+
+type GobTxDecoder struct {
+	r io.Reader
+}
+
+func NewGobTxDecoder(r io.Reader) *GobTxDecoder {
+	return &GobTxDecoder{
+		r: r,
+	}
+}
+
+func (d GobTxDecoder) Decode(t *Transaction) error {
+	return gob.NewDecoder(d.r).Decode(t)
 }
