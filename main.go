@@ -1,10 +1,15 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	"context"
 	"log"
+	"math/rand"
+	"strconv"
 	"time"
 
+	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
 )
 
@@ -31,16 +36,42 @@ func main() {
 	go func() {
 		cnt := 0
 		for {
-			peer.SendMessage(me.Addr(), []byte(fmt.Sprintf("msg %d", cnt)))
+
+			sendRandomTransaction(peer, me)
 			time.Sleep(1 * time.Second)
+			cnt += 1
 		}
 	}()
 
 	opts := network.ServerOpts{
 		Transports: []network.Transport{me, peer},
 	}
-	print("hi")
 
 	srv := network.NewServer(opts)
-	srv.Start()
+	srv.Start(context.Background())
+}
+
+// helper for testing. remove later
+func sendRandomTransaction(from, to network.Transport) error {
+	privKey := crypto.MustGeneratePrivateKey()
+	data := []byte(strconv.FormatInt(rand.Int63(), 10))
+
+	tx := core.NewTransaction(data)
+	err := tx.Sign(privKey)
+	if err != nil {
+		return err
+	}
+
+	txEncoded := &bytes.Buffer{}
+	err = tx.Encode(core.NewGobTxEncoder(txEncoded))
+	if err != nil {
+		return err
+	}
+	msg := network.NewMessage(network.MessageTypeTx, txEncoded.Bytes())
+	payload, err := msg.Bytes()
+	if err != nil {
+		return err
+	}
+	return from.SendMessage(to.Addr(), payload)
+
 }

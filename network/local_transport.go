@@ -1,6 +1,7 @@
 package network
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 )
@@ -57,7 +58,7 @@ func (lt *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
 
 	msg := RPC{
 		From:    lt.addr,
-		Payload: payload,
+		Payload: bytes.NewReader(payload),
 	}
 
 	// this is kind of hacky b/c it's using the private

@@ -24,7 +24,11 @@ func TestConnect(t *testing.T) {
 
 	got := <-trb.Consume()
 
-	assert.Equal(t, msg, got.Payload)
+	b := make([]byte, len(msg))
+	n, err := got.Payload.Read(b)
+	assert.Equal(t, n, len(b))
+	assert.NoError(t, err)
+	assert.Equal(t, msg, b)
 	assert.Equal(t, tra.addr, got.From)
 
 }

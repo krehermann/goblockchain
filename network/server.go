@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,6 +21,7 @@ type ServerOpts struct {
 	BlockTime  time.Duration
 	TxHasher   core.Hasher[*core.Transaction]
 	Logger     *zap.Logger
+	RPCHandler RPCHandler
 }
 
 type Server struct {
@@ -45,7 +47,7 @@ func NewServer(opts ServerOpts) *Server {
 	if opts.BlockTime == time.Duration(0) {
 		opts.BlockTime = defaultBlockTime
 	}
-	return &Server{
+	s := &Server{
 		ServerOpts:  opts,
 		mempool:     NewTxPool(),
 		blockTime:   opts.BlockTime,
@@ -54,28 +56,59 @@ func NewServer(opts ServerOpts) *Server {
 		quitChan:    make(chan struct{}, 1),
 		logger:      opts.Logger,
 	}
+
+	if s.ServerOpts.RPCHandler == nil {
+		s.ServerOpts.RPCHandler = NewDefaultRPCHandler(s)
+	}
+	return s
 }
 
-func (s *Server) Start() error {
+func (s *Server) ProcessTransaction(from NetAddr, tx *core.Transaction) error {
+	//	s.logger.Info("ProcessTransaction", zap.Any("tx", tx), zap.String("from", string(from)))
+	return s.handleTransaction(tx)
+}
+
+func (s *Server) Start(ctx context.Context) error {
+
+	errCh := make(chan error)
+	ctx, cancelFunc := context.WithCancel(ctx)
+
 	s.initTransports()
-	blockTicker := time.NewTicker(s.blockTime)
-loop:
-	for {
-		select {
-		case msg := <-s.rpcChan:
-			s.handleRPC(msg)
+	go func() {
+		blockTicker := time.NewTicker(s.blockTime)
+	loop:
+		for {
+			select {
+			case rpc := <-s.rpcChan:
+				err := s.ServerOpts.RPCHandler.HandleRPC(rpc)
+				if err != nil {
+					errCh <- err
+				}
 
-		case <-s.quitChan:
-			break loop
+			case <-s.quitChan:
+				break loop
 
-		// prevent busy loop
-		case <-blockTicker.C:
-			if s.isValidator {
-				// need to call consensus logic here
-				s.createNewBlock()
+			// prevent busy loop
+			case <-blockTicker.C:
+				if s.isValidator {
+					// need to call consensus logic here
+					s.createNewBlock()
+				}
 			}
 		}
+	}()
+
+errorLoop:
+	for {
+		select {
+		case err := <-errCh:
+			s.logger.Error(err.Error())
+		case <-ctx.Done():
+			cancelFunc()
+			break errorLoop
+		}
 	}
+
 	return nil
 }
 
@@ -91,6 +124,7 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 	if err != nil {
 		return err
 	}
+	tx.SetCreatedAt(time.Now().UTC())
 
 	addedOk, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
 	if err != nil {
@@ -100,6 +134,11 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 	if addedOk {
 		s.logger.Info("added tx to mempool",
 			zap.String("txn hash", tx.Hash(s.TxHasher).String()))
+		// TODO broadcast to peers
+	} else {
+		s.logger.Info("skipped tx, already in mempool",
+			zap.String("txn hash", tx.Hash(s.TxHasher).String()))
+
 	}
 	return nil
 }
