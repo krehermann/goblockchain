@@ -16,12 +16,15 @@ var (
 
 type ServerOpts struct {
 	// multiple transport layers
-	Transports []Transport
-	PrivateKey *crypto.PrivateKey
-	BlockTime  time.Duration
-	TxHasher   core.Hasher[*core.Transaction]
-	Logger     *zap.Logger
-	RPCHandler RPCHandler
+	Transports    []Transport
+	PrivateKey    *crypto.PrivateKey
+	BlockTime     time.Duration
+	TxHasher      core.Hasher[*core.Transaction]
+	Logger        *zap.Logger
+	RPCDecodeFunc RPCDecodeFunc
+	RPCProcessor  RPCProcessor
+	// broad transport
+	Egress Transport
 }
 
 type Server struct {
@@ -35,6 +38,7 @@ type Server struct {
 	rpcChan     chan RPC
 	quitChan    chan struct{}
 	logger      *zap.Logger
+	errChan     chan error
 }
 
 func NewServer(opts ServerOpts) *Server {
@@ -47,30 +51,48 @@ func NewServer(opts ServerOpts) *Server {
 	if opts.BlockTime == time.Duration(0) {
 		opts.BlockTime = defaultBlockTime
 	}
+	if opts.RPCDecodeFunc == nil {
+		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
+	}
+	if opts.Egress == nil {
+		opts.Egress = NewLocalTransport("egress")
+	}
 	s := &Server{
 		ServerOpts:  opts,
-		mempool:     NewTxPool(),
+		mempool:     NewTxPool(WithLogger(opts.Logger)),
 		blockTime:   opts.BlockTime,
 		isValidator: (opts.PrivateKey != nil),
 		rpcChan:     make(chan RPC),
 		quitChan:    make(chan struct{}, 1),
 		logger:      opts.Logger,
+		errChan:     make(chan error, 1),
 	}
 
-	if s.ServerOpts.RPCHandler == nil {
-		s.ServerOpts.RPCHandler = NewDefaultRPCHandler(s)
+	// the server itself is the default rpc processor
+	if s.RPCProcessor == nil {
+		s.RPCProcessor = s
 	}
 	return s
 }
 
-func (s *Server) ProcessTransaction(from NetAddr, tx *core.Transaction) error {
-	//	s.logger.Info("ProcessTransaction", zap.Any("tx", tx), zap.String("from", string(from)))
-	return s.handleTransaction(tx)
+// implement RPCProcessor interface
+func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
+	switch t := dmsg.Data.(type) {
+
+	case *core.Transaction:
+		s.logger.Info("ProcessMessage",
+			zap.String("from", string(dmsg.From)),
+			zap.String("type", MessageTypeTx.String()))
+
+		return s.handleTransaction(t)
+
+	default:
+		return fmt.Errorf("invalid decoded message %v", t)
+	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
 
-	errCh := make(chan error)
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	s.initTransports()
@@ -80,9 +102,13 @@ func (s *Server) Start(ctx context.Context) error {
 		for {
 			select {
 			case rpc := <-s.rpcChan:
-				err := s.ServerOpts.RPCHandler.HandleRPC(rpc)
+				decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
 				if err != nil {
-					errCh <- err
+					s.errChan <- err
+				}
+				err = s.ProcessMessage(decodedMsg)
+				if err != nil {
+					s.errChan <- err
 				}
 
 			case <-s.quitChan:
@@ -101,8 +127,10 @@ func (s *Server) Start(ctx context.Context) error {
 errorLoop:
 	for {
 		select {
-		case err := <-errCh:
-			s.logger.Error(err.Error())
+		case err := <-s.errChan:
+			if err != nil {
+				s.logger.Error(err.Error())
+			}
 		case <-ctx.Done():
 			cancelFunc()
 			break errorLoop
@@ -118,27 +146,43 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 	// server puts it into the mempool
 	// 2. server broadcasts txn to connected nodes. this is really second
 	// part of the first
-	var err error
-
-	err = tx.Verify()
+	err := tx.Verify()
 	if err != nil {
 		return err
 	}
 	tx.SetCreatedAt(time.Now().UTC())
 
-	addedOk, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
+	isNewTx, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
 	if err != nil {
 		return err
 	}
 
-	if addedOk {
-		s.logger.Info("added tx to mempool",
-			zap.String("txn hash", tx.Hash(s.TxHasher).String()))
-		// TODO broadcast to peers
-	} else {
-		s.logger.Info("skipped tx, already in mempool",
-			zap.String("txn hash", tx.Hash(s.TxHasher).String()))
+	if isNewTx {
+		go func() {
+			s.errChan <- s.broadcastTx(tx)
+		}()
+	}
+	return err
+}
 
+func (s *Server) broadcastTx(tx *core.Transaction) error {
+	msg, err := newMessageFromTransaction(tx)
+	if err != nil {
+		return err
+	}
+	return s.broadcast(msg)
+}
+
+func (s *Server) broadcast(msg *Message) error {
+	payload, err := msg.Bytes()
+	if err != nil {
+		return err
+	}
+
+	for _, trans := range s.Transports {
+		if err := trans.Broadcast(payload); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -147,14 +191,10 @@ func (s *Server) createNewBlock() {
 	fmt.Println("creating block")
 }
 
-func (s *Server) handleRPC(msg RPC) {
-	fmt.Printf("dummy rpc handler: %+v\n", msg)
-}
-
 func (s *Server) initTransports() {
 	// make each transport listen for messages
 	for _, tr := range s.Transports {
-
+		s.Egress.Connect(tr)
 		go func(tr Transport) {
 			for msg := range tr.Consume() {
 				// we need to do something with the messages
@@ -164,5 +204,6 @@ func (s *Server) initTransports() {
 				s.rpcChan <- msg
 			}
 		}(tr)
+
 	}
 }

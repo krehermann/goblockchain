@@ -11,6 +11,7 @@ import (
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"go.uber.org/zap"
 )
 
 // Server
@@ -21,10 +22,13 @@ import (
 
 func main() {
 
+	l, err := zap.NewDevelopment()
+	zap.ReplaceGlobals(l)
+
 	me := network.NewLocalTransport("local")
 	peer := network.NewLocalTransport("remote")
 
-	err := me.Connect(peer)
+	err = me.Connect(peer)
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
@@ -36,7 +40,6 @@ func main() {
 	go func() {
 		cnt := 0
 		for {
-
 			sendRandomTransaction(peer, me)
 			time.Sleep(1 * time.Second)
 			cnt += 1

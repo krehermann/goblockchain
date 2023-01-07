@@ -53,21 +53,35 @@ func (m *Message) Bytes() ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-type RPCHandler interface {
-	HandleRPC(rpc RPC) error
-}
-
-type DefaultRPCHandler struct {
-	p RPCProcessor
-}
-
-func NewDefaultRPCHandler(p RPCProcessor) *DefaultRPCHandler {
-	return &DefaultRPCHandler{
-		p: p,
+// helper to create a Message from Tx
+// note to self: need to live in this package rather than func on tx
+// because it is the right layering -- messages can wrap anything
+// making a func on tx to create a message would be dependency invertion
+func newMessageFromTransaction(tx *core.Transaction) (*Message, error) {
+	buf := &bytes.Buffer{}
+	// TODO does this encoder need to be a parameter?
+	err := tx.Encode(core.NewGobTxEncoder(buf))
+	if err != nil {
+		return nil, err
 	}
+	return NewMessage(MessageTypeTx, buf.Bytes()), nil
+
 }
 
-func (h *DefaultRPCHandler) HandleRPC(rpc RPC) error {
+type DecodedMessage struct {
+	From NetAddr
+	Data any
+}
+
+func (d *DecodedMessage) Bytes() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(d.Data)
+	return buf.Bytes(), err
+}
+
+type RPCDecodeFunc func(RPC) (*DecodedMessage, error)
+
+func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 	// default handler makes strong assumptions about the format
 	// of the data in the payload. this is fine and doesn't
 	// effect extensibility -- another developer can
@@ -75,27 +89,27 @@ func (h *DefaultRPCHandler) HandleRPC(rpc RPC) error {
 
 	msg := Message{}
 	err := gob.NewDecoder(rpc.Payload).Decode(&msg)
+	var out DecodedMessage
 	if err != nil {
-		return fmt.Errorf("HandleRPC: failed to decode payload from %s: %w", rpc.From, err)
+		return &out, fmt.Errorf("HandleRPC: failed to decode payload from %s: %w", rpc.From, err)
 	}
 
 	switch msg.Header {
 	case MessageTypeTx:
-		fmt.Println("handle tx")
 		txReader := bytes.NewReader(msg.Data)
 		tx := new(core.Transaction)
 		err := tx.Decode(core.NewGobTxDecoder(txReader))
 		if err != nil {
-			return fmt.Errorf("HandleRPC: failed to decode transacation: %w", err)
+			return &out, fmt.Errorf("HandleRPC: failed to decode transacation from %s: %w", rpc.From, err)
 		}
-		h.p.ProcessTransaction(rpc.From, tx)
+		out = DecodedMessage{From: rpc.From, Data: tx}
 	default:
-		return fmt.Errorf("invalid message type %s", msg.Header)
+		return &out, fmt.Errorf("invalid message type %s", msg.Header)
 
 	}
-	return nil
+	return &out, nil
 }
 
 type RPCProcessor interface {
-	ProcessTransaction(NetAddr, *core.Transaction) error
+	ProcessMessage(*DecodedMessage) error
 }

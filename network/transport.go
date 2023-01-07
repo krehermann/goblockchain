@@ -8,4 +8,6 @@ type Transport interface {
 	Connect(Transport) error
 	SendMessage(NetAddr, []byte) error
 	Addr() NetAddr
+	// transport is agnostic to the types in the payload
+	Broadcast(payload []byte) error
 }

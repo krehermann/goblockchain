@@ -6,6 +6,7 @@ import (
 
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/types"
+	"go.uber.org/zap"
 )
 
 type TxMapSorter struct {
@@ -42,12 +43,28 @@ func (s *TxMapSorter) Less(i, j int) bool {
 type TxPool struct {
 	lock         sync.RWMutex
 	transactions map[types.Hash]*core.Transaction
+	logger       *zap.Logger
 }
 
-func NewTxPool() *TxPool {
-	return &TxPool{
-		transactions: make(map[types.Hash]*core.Transaction),
+type TxPoolOpt func(*TxPool) *TxPool
+
+func WithLogger(l *zap.Logger) TxPoolOpt {
+	return func(p *TxPool) *TxPool {
+		if l != nil {
+			p.logger = l
+		}
+		return p
 	}
+}
+func NewTxPool(opts ...TxPoolOpt) *TxPool {
+	p := &TxPool{
+		transactions: make(map[types.Hash]*core.Transaction),
+		logger:       zap.L().Named("txpool"),
+	}
+	for _, opt := range opts {
+		p = opt(p)
+	}
+	return p
 }
 
 // transactions need to ordered. a simple way to do this FIFO
@@ -66,18 +83,20 @@ func (p *TxPool) Len() int {
 // Add adds transaction of the mempool. returns any error and returns true if the
 // add was ok
 func (p *TxPool) Add(tx *core.Transaction, hasher core.Hasher[*core.Transaction]) (bool, error) {
-
 	// we are using a map. in this case the check here is redundant b/c
 	// inserting into the map is idempotent.
 	hash := tx.Hash(hasher)
 	// it's normal to see the same transaction multiple times
 	if p.Has(hash) {
+		p.logger.Info("skip transaction: already in pool", zap.String("hash", hash.String()))
 		return false, nil
 	}
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.transactions[hash] = tx
+	p.logger.Info("add txn to pool", zap.String("hash", hash.String()))
+
 	return true, nil
 }
 

@@ -27,6 +27,16 @@ func (lt *LocalTransport) Consume() <-chan RPC {
 	return lt.consumeCh
 }
 
+func (lt *LocalTransport) Broadcast(payload []byte) error {
+	for _, p := range lt.peers {
+		err := lt.SendMessage(p.Addr(), payload)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // local transport can only connect to another local transport
 // which is pretty obvious from the name. In this case,
 // connect simply adds the input to the peer list
