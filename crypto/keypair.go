@@ -26,7 +26,10 @@ func MustGeneratePrivateKey() PrivateKey {
 	}
 }
 
-func (k *PrivateKey) PublicKey() PublicKey {
+func (k PrivateKey) IsZero() bool {
+	return k.key == nil
+}
+func (k PrivateKey) PublicKey() PublicKey {
 	return PublicKey{
 		Key: &k.key.PublicKey,
 	}

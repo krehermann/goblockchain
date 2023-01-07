@@ -2,11 +2,15 @@ package network
 
 import (
 	"context"
+	"math/rand"
+
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
+	"github.com/krehermann/goblockchain/types"
 	"go.uber.org/zap"
 )
 
@@ -15,16 +19,16 @@ var (
 )
 
 type ServerOpts struct {
+	ID string
 	// multiple transport layers
 	Transports    []Transport
-	PrivateKey    *crypto.PrivateKey
+	PrivateKey    crypto.PrivateKey
 	BlockTime     time.Duration
 	TxHasher      core.Hasher[*core.Transaction]
 	Logger        *zap.Logger
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
-	// broad transport
-	Egress Transport
+	Blockchain    *core.Blockchain
 }
 
 type Server struct {
@@ -39,9 +43,10 @@ type Server struct {
 	quitChan    chan struct{}
 	logger      *zap.Logger
 	errChan     chan error
+	chain       *core.Blockchain
 }
 
-func NewServer(opts ServerOpts) *Server {
+func NewServer(opts ServerOpts) (*Server, error) {
 	if opts.TxHasher == nil {
 		opts.TxHasher = &core.DefaultTxHasher{}
 	}
@@ -54,25 +59,35 @@ func NewServer(opts ServerOpts) *Server {
 	if opts.RPCDecodeFunc == nil {
 		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
 	}
-	if opts.Egress == nil {
-		opts.Egress = NewLocalTransport("egress")
+	if opts.ID == "" {
+		opts.ID = strconv.FormatInt(int64(rand.Intn(1000)), 10)
 	}
+	if opts.Blockchain == nil {
+		genesis := createGenesis()
+		chain, err := core.NewBlockchain(genesis)
+		if err != nil {
+			return nil, err
+		}
+		opts.Blockchain = chain
+	}
+	opts.Logger = opts.Logger.Named(fmt.Sprintf("server-%s", opts.ID))
 	s := &Server{
 		ServerOpts:  opts,
 		mempool:     NewTxPool(WithLogger(opts.Logger)),
 		blockTime:   opts.BlockTime,
-		isValidator: (opts.PrivateKey != nil),
+		isValidator: !opts.PrivateKey.IsZero(),
 		rpcChan:     make(chan RPC),
 		quitChan:    make(chan struct{}, 1),
 		logger:      opts.Logger,
 		errChan:     make(chan error, 1),
+		chain:       opts.Blockchain,
 	}
 
 	// the server itself is the default rpc processor
 	if s.RPCProcessor == nil {
 		s.RPCProcessor = s
 	}
-	return s
+	return s, nil
 }
 
 // implement RPCProcessor interface
@@ -96,33 +111,10 @@ func (s *Server) Start(ctx context.Context) error {
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	s.initTransports()
-	go func() {
-		blockTicker := time.NewTicker(s.blockTime)
-	loop:
-		for {
-			select {
-			case rpc := <-s.rpcChan:
-				decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
-				if err != nil {
-					s.errChan <- err
-				}
-				err = s.ProcessMessage(decodedMsg)
-				if err != nil {
-					s.errChan <- err
-				}
-
-			case <-s.quitChan:
-				break loop
-
-			// prevent busy loop
-			case <-blockTicker.C:
-				if s.isValidator {
-					// need to call consensus logic here
-					s.createNewBlock()
-				}
-			}
-		}
-	}()
+	go s.handleRpcs(ctx)
+	if s.isValidator {
+		go s.handleValidtion(ctx)
+	}
 
 errorLoop:
 	for {
@@ -138,6 +130,51 @@ errorLoop:
 	}
 
 	return nil
+}
+
+func (s *Server) handleValidtion(ctx context.Context) {
+	blockTicker := time.NewTicker(s.blockTime)
+	s.logger.Info("starting validator loop", zap.String("block time", s.blockTime.String()))
+
+validationLoop:
+	for {
+
+		select {
+		// prevent busy loop
+		case <-blockTicker.C:
+			// need to call consensus logic here
+			s.errChan <- s.createNewBlock()
+
+		case <-ctx.Done():
+			s.logger.Info("handleValidation recieved done")
+			break validationLoop
+
+		}
+	}
+}
+
+func (s *Server) handleRpcs(ctx context.Context) {
+	s.logger.Info("starting rpc handler loop")
+loop:
+	for {
+		select {
+		case rpc := <-s.rpcChan:
+			decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
+			if err != nil {
+				s.errChan <- err
+			}
+			err = s.ProcessMessage(decodedMsg)
+			if err != nil {
+				s.errChan <- err
+			}
+		case <-s.quitChan:
+			s.logger.Info("handleRpcs received quit signal")
+			break loop
+		case <-ctx.Done():
+			break loop
+		}
+	}
+
 }
 
 func (s *Server) handleTransaction(tx *core.Transaction) error {
@@ -187,14 +224,30 @@ func (s *Server) broadcast(msg *Message) error {
 	return nil
 }
 
-func (s *Server) createNewBlock() {
-	fmt.Println("creating block")
+func (s *Server) createNewBlock() error {
+	s.logger.Info("creating block")
+
+	currHeader, err := s.chain.GetHeader(s.chain.Height())
+	if err != nil {
+		return err
+	}
+
+	block, err := core.NewBlockFromPrevHeader(currHeader, nil)
+	if err != nil {
+		return err
+	}
+
+	err = block.Sign(s.PrivateKey)
+	if err != nil {
+		return err
+	}
+
+	return s.chain.AddBlock(block)
 }
 
 func (s *Server) initTransports() {
 	// make each transport listen for messages
 	for _, tr := range s.Transports {
-		s.Egress.Connect(tr)
 		go func(tr Transport) {
 			for msg := range tr.Consume() {
 				// we need to do something with the messages
@@ -206,4 +259,14 @@ func (s *Server) initTransports() {
 		}(tr)
 
 	}
+}
+
+func createGenesis() *core.Block {
+	h := &core.Header{
+		Version:   1,
+		DataHash:  types.Hash{},
+		Height:    0,
+		Timestamp: uint64(time.Now().UTC().Unix()),
+	}
+	return core.NewBlock(h, []core.Transaction{})
 }

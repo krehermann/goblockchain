@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"time"
 
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/types"
@@ -29,6 +30,25 @@ func (h *Header) MustToBytes() []byte {
 	return buf.Bytes()
 }
 
+func newHeaderFromPrev(prev *Header) *Header {
+	return &Header{
+		Version:           1,
+		Height:            prev.Height + 1,
+		PreviousBlockHash: DefaultBlockHasher{}.Hash(prev),
+		Timestamp:         uint64(time.Now().UTC().UnixNano()),
+	}
+
+}
+
+func (h *Header) setDataHash(txns []Transaction) (*Header, error) {
+	dh, err := calculateDataHash(txns)
+	if err != nil {
+		return h, err
+	}
+	h.DataHash = dh
+	return h, nil
+}
+
 type Block struct {
 	*Header
 	Transactions []Transaction
@@ -40,16 +60,27 @@ type Block struct {
 }
 
 func NewBlock(h *Header, txns []Transaction) *Block {
+
 	return &Block{
 		Header:       h,
 		Transactions: txns,
 	}
 }
 
+func NewBlockFromPrevHeader(prev *Header, txns []Transaction) (*Block, error) {
+	h, err := newHeaderFromPrev(prev).setDataHash(txns)
+
+	if err != nil {
+		return nil, err
+	}
+	return NewBlock(h, txns), err
+}
+
 func (b *Block) AddTransaction(tx *Transaction) {
 	b.Transactions = append(b.Transactions, *tx)
 }
 
+// Sign must called to finalize a block -- after all the transactions are added
 func (b *Block) Sign(privKey crypto.PrivateKey) error {
 	sig, err := privKey.Sign(b.Header.MustToBytes())
 	if err != nil {
@@ -57,6 +88,11 @@ func (b *Block) Sign(privKey crypto.PrivateKey) error {
 	}
 	b.Signature = sig
 	b.Validator = privKey.PublicKey()
+	dh, err := calculateDataHash(b.Transactions)
+	if err != nil {
+		return err
+	}
+	b.DataHash = dh
 	return nil
 }
 
@@ -73,6 +109,14 @@ func (b *Block) Verify() error {
 		if err != nil {
 			return fmt.Errorf("block verify failed at transaction %d: %w", i, err)
 		}
+	}
+
+	dh, err := calculateDataHash(b.Transactions)
+	if err != nil {
+		return nil
+	}
+	if dh != b.DataHash {
+		return fmt.Errorf("invalid data hash. got %s != given %s", dh.String(), b.DataHash)
 	}
 	return nil
 }

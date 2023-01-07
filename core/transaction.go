@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -80,4 +82,19 @@ func (txn *Transaction) Verify() error {
 		return fmt.Errorf("invalid transaction signature")
 	}
 	return nil
+}
+
+func calculateDataHash(txns []Transaction) (types.Hash, error) {
+	var (
+		buf  = &bytes.Buffer{}
+		hash types.Hash
+	)
+	for _, tx := range txns {
+		err := tx.Encode(NewGobTxEncoder(buf))
+		if err != nil {
+			return hash, err
+		}
+	}
+	hash = sha256.Sum256(buf.Bytes())
+	return hash, nil
 }

@@ -1,0 +1,16 @@
+Episode 11: creating blocks
+
+problem in server.Start:
+1. the ticker is only needed is the server is a validatore
+2. the rpc receiver can block the the ticker. this is very bad b/c it means that
+    the blocktime is not reliable
+
+choosen solution:
+refactor the start code to be composed of two go routines, one to handle incoming rpc and
+one to handle validator
+
+Implement createBlock in server
+Add DataHash to blocks -- done in Sign, which is different and seemingly (much) easier than the validatore
+
+
+

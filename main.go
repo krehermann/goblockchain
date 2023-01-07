@@ -48,9 +48,13 @@ func main() {
 
 	opts := network.ServerOpts{
 		Transports: []network.Transport{me, peer},
+		PrivateKey: crypto.MustGeneratePrivateKey(),
 	}
 
-	srv := network.NewServer(opts)
+	srv, err := network.NewServer(opts)
+	if err != nil {
+		l.Fatal(err.Error())
+	}
 	srv.Start(context.Background())
 }
 
