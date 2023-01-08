@@ -40,7 +40,7 @@ func newHeaderFromPrev(prev *Header) *Header {
 
 }
 
-func (h *Header) setDataHash(txns []Transaction) (*Header, error) {
+func (h *Header) setDataHash(txns []*Transaction) (*Header, error) {
 	dh, err := calculateDataHash(txns)
 	if err != nil {
 		return h, err
@@ -51,7 +51,7 @@ func (h *Header) setDataHash(txns []Transaction) (*Header, error) {
 
 type Block struct {
 	*Header
-	Transactions []Transaction
+	Transactions []*Transaction
 	// validator and signature for verifiability of creator
 	Validator crypto.PublicKey
 	Signature *crypto.Signature
@@ -59,7 +59,7 @@ type Block struct {
 	hash types.Hash
 }
 
-func NewBlock(h *Header, txns []Transaction) *Block {
+func NewBlock(h *Header, txns []*Transaction) *Block {
 
 	return &Block{
 		Header:       h,
@@ -67,7 +67,7 @@ func NewBlock(h *Header, txns []Transaction) *Block {
 	}
 }
 
-func NewBlockFromPrevHeader(prev *Header, txns []Transaction) (*Block, error) {
+func NewBlockFromPrevHeader(prev *Header, txns []*Transaction) (*Block, error) {
 	h, err := newHeaderFromPrev(prev).setDataHash(txns)
 
 	if err != nil {
@@ -77,7 +77,7 @@ func NewBlockFromPrevHeader(prev *Header, txns []Transaction) (*Block, error) {
 }
 
 func (b *Block) AddTransaction(tx *Transaction) {
-	b.Transactions = append(b.Transactions, *tx)
+	b.Transactions = append(b.Transactions, tx)
 }
 
 // Sign must called to finalize a block -- after all the transactions are added

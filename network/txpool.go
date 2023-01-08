@@ -46,6 +46,12 @@ type TxPool struct {
 	logger       *zap.Logger
 }
 
+type TxOrderedMap struct {
+	lock   sync.RWMutex
+	lookup map[types.Hash]*core.Transaction
+	txns   *types.List[*core.Transaction]
+}
+
 type TxPoolOpt func(*TxPool) *TxPool
 
 func WithLogger(l *zap.Logger) TxPoolOpt {
@@ -59,11 +65,12 @@ func WithLogger(l *zap.Logger) TxPoolOpt {
 func NewTxPool(opts ...TxPoolOpt) *TxPool {
 	p := &TxPool{
 		transactions: make(map[types.Hash]*core.Transaction),
-		logger:       zap.L().Named("txpool"),
+		logger:       zap.L(),
 	}
 	for _, opt := range opts {
 		p = opt(p)
 	}
+	p.logger = p.logger.Named("txpool")
 	return p
 }
 
@@ -88,14 +95,18 @@ func (p *TxPool) Add(tx *core.Transaction, hasher core.Hasher[*core.Transaction]
 	hash := tx.Hash(hasher)
 	// it's normal to see the same transaction multiple times
 	if p.Has(hash) {
-		p.logger.Info("skip transaction: already in pool", zap.String("hash", hash.String()))
+		p.logger.Info("skip transaction: already in pool",
+			zap.String("hash", hash.Prefix()))
 		return false, nil
 	}
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.transactions[hash] = tx
-	p.logger.Info("add txn to pool", zap.String("hash", hash.String()))
+	p.logger.Info("add txn to pool",
+		zap.String("hash", hash.Prefix()),
+		zap.Int("mem pool len", len(p.transactions)),
+	)
 
 	return true, nil
 }
@@ -111,6 +122,7 @@ func (p *TxPool) Has(h types.Hash) bool {
 
 func (p *TxPool) Flush() {
 	// reset the pool
+	p.logger.Debug("Flush")
 	p.lock.Lock()
 	p.transactions = make(map[types.Hash]*core.Transaction)
 	p.lock.Unlock()

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 type LocalTransport struct {
@@ -13,6 +15,7 @@ type LocalTransport struct {
 	peers     map[NetAddr]*LocalTransport
 	m         sync.RWMutex
 	consumeCh chan RPC
+	logger    *zap.Logger
 }
 
 func NewLocalTransport(addr NetAddr) *LocalTransport {
@@ -20,6 +23,8 @@ func NewLocalTransport(addr NetAddr) *LocalTransport {
 		addr:      addr,
 		consumeCh: make(chan RPC, 1024),
 		peers:     make(map[NetAddr]*LocalTransport),
+		// TODO functional opts
+		logger: zap.L().Named("transport"),
 	}
 }
 
@@ -58,6 +63,11 @@ func (lt *LocalTransport) Addr() NetAddr {
 }
 
 func (lt *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
+	lt.logger.Debug("send message",
+		zap.String("from", string(lt.Addr())),
+		zap.String("to", string(to)),
+	)
+
 	lt.m.RLock()
 	defer lt.m.RUnlock()
 

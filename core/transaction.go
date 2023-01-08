@@ -84,7 +84,7 @@ func (txn *Transaction) Verify() error {
 	return nil
 }
 
-func calculateDataHash(txns []Transaction) (types.Hash, error) {
+func calculateDataHash(txns []*Transaction) (types.Hash, error) {
 	var (
 		buf  = &bytes.Buffer{}
 		hash types.Hash

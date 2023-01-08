@@ -53,3 +53,8 @@ func (h Hash) ToSlice() []byte {
 func (h Hash) String() string {
 	return hex.EncodeToString(h.ToSlice())
 }
+
+func (h Hash) Prefix() string {
+	r := []rune(h.String())
+	return string(r[:8])
+}

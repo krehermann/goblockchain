@@ -1,3 +1,10 @@
+Episode 12: add transactions to block
+
+for now add all transactions from mempool into block. later need to limit
+the number based on some size or complexity
+
+plumb logger to blockchain. using functional opts very nice, with slight startup overhead
+
 Episode 11: creating blocks
 
 problem in server.Start:

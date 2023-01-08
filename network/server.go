@@ -62,15 +62,16 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	if opts.ID == "" {
 		opts.ID = strconv.FormatInt(int64(rand.Intn(1000)), 10)
 	}
+	opts.Logger = opts.Logger.Named(opts.ID)
+
 	if opts.Blockchain == nil {
 		genesis := createGenesis()
-		chain, err := core.NewBlockchain(genesis)
+		chain, err := core.NewBlockchain(genesis, core.WithLogger(opts.Logger))
 		if err != nil {
 			return nil, err
 		}
 		opts.Blockchain = chain
 	}
-	opts.Logger = opts.Logger.Named(fmt.Sprintf("server-%s", opts.ID))
 	s := &Server{
 		ServerOpts:  opts,
 		mempool:     NewTxPool(WithLogger(opts.Logger)),
@@ -78,7 +79,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		isValidator: !opts.PrivateKey.IsZero(),
 		rpcChan:     make(chan RPC),
 		quitChan:    make(chan struct{}, 1),
-		logger:      opts.Logger,
+		logger:      opts.Logger.Named("server"),
 		errChan:     make(chan error, 1),
 		chain:       opts.Blockchain,
 	}
@@ -107,7 +108,9 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-
+	s.logger.Info("starting server",
+		zap.String("id", s.ID),
+	)
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	s.initTransports()
@@ -203,6 +206,9 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcastTx(tx *core.Transaction) error {
+	s.logger.Debug("broadcastTx",
+		zap.Any("hash", tx.Hash(&core.DefaultTxHasher{}).Prefix()))
+
 	msg, err := newMessageFromTransaction(tx)
 	if err != nil {
 		return err
@@ -232,7 +238,10 @@ func (s *Server) createNewBlock() error {
 		return err
 	}
 
-	block, err := core.NewBlockFromPrevHeader(currHeader, nil)
+	// TODO: add logic to determine how many txns can be in a block
+	txns := s.mempool.Transactions()
+
+	block, err := core.NewBlockFromPrevHeader(currHeader, txns)
 	if err != nil {
 		return err
 	}
@@ -242,7 +251,14 @@ func (s *Server) createNewBlock() error {
 		return err
 	}
 
-	return s.chain.AddBlock(block)
+	err = s.chain.AddBlock(block)
+	if err != nil {
+		return err
+	}
+	// remember to clear our mempool after adding a block
+	// would like to make this cleaner
+	s.mempool.Flush()
+	return nil
 }
 
 func (s *Server) initTransports() {
@@ -266,7 +282,7 @@ func createGenesis() *core.Block {
 		Version:   1,
 		DataHash:  types.Hash{},
 		Height:    0,
-		Timestamp: uint64(time.Now().UTC().Unix()),
+		Timestamp: uint64(time.Unix(1000000, 0).Unix()),
 	}
-	return core.NewBlock(h, []core.Transaction{})
+	return core.NewBlock(h, []*core.Transaction{})
 }

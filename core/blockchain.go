@@ -3,6 +3,8 @@ package core
 import (
 	"fmt"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 // start with a struct, later move to interface
@@ -17,17 +19,32 @@ type Blockchain struct {
 	headers  []*Header
 
 	validator Validator
+	logger    *zap.Logger
 }
 
-func NewBlockchain(genesis *Block) (*Blockchain, error) {
+type BlockchainOpt func(bc *Blockchain) *Blockchain
+
+func WithLogger(l *zap.Logger) BlockchainOpt {
+	return func(bc *Blockchain) *Blockchain {
+		bc.logger = l.Named("blockchain")
+		return bc
+	}
+}
+
+func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 	bc := &Blockchain{
 		headers: []*Header{},
 		store:   NewMemStore(),
+		logger:  zap.L().Named("blockchain"),
 	}
 
 	// this is a bit weird. need to be able to configure the validator
 	// left for later
 	bc.WithValidator(NewBlockValidator(bc))
+	for _, opt := range opts {
+		bc = opt(bc)
+	}
+
 	err := bc.addGensisBlock(genesis)
 
 	return bc, err
@@ -93,6 +110,10 @@ func (bc *Blockchain) persistBlock(b *Block) error {
 	bc.headers = append(bc.headers, b.Header)
 	bc.headerMu.Unlock()
 
+	bc.logger.Info("added block to chain",
+		zap.String("hash", b.Hash(DefaultBlockHasher{}).String()),
+		zap.Any("tx len", len(b.Transactions)),
+	)
 	return bc.store.Put(b)
 
 }

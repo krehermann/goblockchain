@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"log"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"time"
@@ -23,43 +23,86 @@ import (
 func main() {
 
 	l, err := zap.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
 	zap.ReplaceGlobals(l)
 
-	me := network.NewLocalTransport("local")
-	peer := network.NewLocalTransport("remote")
+	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(ctx)
 
-	err = me.Connect(peer)
-	if err != nil {
-		log.Fatalf("%s", err)
-	}
-	err = peer.Connect(me)
-	if err != nil {
-		log.Fatalf("%s", err)
-	}
+	local := network.NewLocalTransport("local")
+	peer1 := network.NewLocalTransport("peer1")
+	peer2 := network.NewLocalTransport("peer2")
+	peer3 := network.NewLocalTransport("peer3")
+
+	fatalIfErr(local.Connect(peer1))
+	fatalIfErr(peer1.Connect(local))
+
+	fatalIfErr(peer1.Connect(peer2))
+	fatalIfErr(peer2.Connect(peer3))
+
+	initRemoteServers(ctx, peer1, peer2, peer3)
 
 	go func() {
 		cnt := 0
 		for {
-			sendRandomTransaction(peer, me)
+			fatalIfErr(sendRandomTransaction(peer1, local))
 			time.Sleep(1 * time.Second)
 			cnt += 1
 		}
 	}()
 
-	opts := network.ServerOpts{
-		Transports: []network.Transport{me, peer},
-		PrivateKey: crypto.MustGeneratePrivateKey(),
+	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
+	go localServer.Start(context.Background())
+
+	time.Sleep(10 * time.Second)
+	cancelFunc()
+}
+
+func initRemoteServers(ctx context.Context, trs ...network.Transport) {
+	zap.L().Info("initRemoteServers")
+
+	for i, tr := range trs {
+		s := mustMakeServer(makeNonValidatorOpts(
+			fmt.Sprintf("remote-%d", i), tr))
+
+		go func() {
+			err := s.Start(ctx)
+			fatalIfErr(err)
+		}()
 	}
 
-	srv, err := network.NewServer(opts)
-	if err != nil {
-		l.Fatal(err.Error())
+}
+
+func mustMakeServer(opts network.ServerOpts) *network.Server {
+	s, err := network.NewServer(opts)
+	fatalIfErr(err)
+
+	return s
+}
+
+func makeValidatorOpts(id string, tr network.Transport) network.ServerOpts {
+	privKey := crypto.MustGeneratePrivateKey()
+	return network.ServerOpts{
+		PrivateKey: privKey,
+		ID:         id,
+		Transports: []network.Transport{tr},
 	}
-	srv.Start(context.Background())
+}
+
+func makeNonValidatorOpts(id string, tr network.Transport) network.ServerOpts {
+	return network.ServerOpts{
+		ID:         id,
+		Transports: []network.Transport{tr},
+	}
 }
 
 // helper for testing. remove later
 func sendRandomTransaction(from, to network.Transport) error {
+	zap.L().Info("sendTransaction",
+		zap.String("from", string(from.Addr())),
+		zap.String("to", string(to.Addr())))
 	privKey := crypto.MustGeneratePrivateKey()
 	data := []byte(strconv.FormatInt(rand.Int63(), 10))
 
@@ -81,4 +124,10 @@ func sendRandomTransaction(from, to network.Transport) error {
 	}
 	return from.SendMessage(to.Addr(), payload)
 
+}
+
+func fatalIfErr(err error) {
+	if err != nil {
+		zap.L().Fatal(err.Error())
+	}
 }

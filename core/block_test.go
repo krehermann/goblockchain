@@ -42,7 +42,7 @@ func randomBlock(t *testing.T, height uint32, prevBlockHash types.Hash) *Block {
 			Timestamp:         uint64(time.Now().Unix()),
 			Height:            height,
 		},
-		Transactions: []Transaction{},
+		Transactions: []*Transaction{},
 	}
 
 	return b
