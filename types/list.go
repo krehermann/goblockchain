@@ -35,7 +35,7 @@ func (l *List[T]) Clear() {
 }
 
 // return first index of val, or -1
-func (l *List[T]) IndexOf(val T) int {
+func (l *List[T]) Index(val T) int {
 	for idx, elem := range l.data {
 		if reflect.DeepEqual(elem, val) {
 			return idx
@@ -45,7 +45,7 @@ func (l *List[T]) IndexOf(val T) int {
 }
 
 func (l *List[T]) Delete(val T) {
-	idx := l.IndexOf(val)
+	idx := l.Index(val)
 	if idx != -1 {
 		l.DeleteAt(idx)
 	}
@@ -81,4 +81,8 @@ func (l *List[T]) Last() T {
 
 func (l *List[T]) Len() int {
 	return len(l.data)
+}
+
+func (l *List[T]) Slice() []T {
+	return l.data
 }

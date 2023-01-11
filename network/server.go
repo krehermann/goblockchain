@@ -239,7 +239,7 @@ func (s *Server) createNewBlock() error {
 	}
 
 	// TODO: add logic to determine how many txns can be in a block
-	txns := s.mempool.Transactions()
+	txns := s.mempool.Pending()
 
 	block, err := core.NewBlockFromPrevHeader(currHeader, txns)
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *Server) createNewBlock() error {
 	}
 	// remember to clear our mempool after adding a block
 	// would like to make this cleaner
-	s.mempool.Flush()
+	s.mempool.ClearPending()
 	return nil
 }
 

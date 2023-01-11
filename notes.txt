@@ -1,9 +1,27 @@
+Self Study: Update the mempool implementation
+
+Anthony did this offline here
+https://github.com/anthdm/projectx/commit/6b7b3c6b6b46877950cf15d518b2dea4bb4842ad#diff-65ddbfca57544ad3aaedea5dbb6e4911bbe40753fb680c41a527dccff59311eb
+
+More or less follow along. However, observe that his SortedMap is not really sorted. it
+is ordered by Add operation.
+
+A cleaner implementation would be a generic sorted map. As it stands the List and map 
+are entangled a bit too much
+
+Note: my implementation caps the pending transactions as well as the transaction history
+
+
 Episode 12: add transactions to block
 
 for now add all transactions from mempool into block. later need to limit
 the number based on some size or complexity
 
 plumb logger to blockchain. using functional opts very nice, with slight startup overhead
+
+it's getting confusing with the broadcasting and transactions. need a way to think about
+and test this
+
 
 Episode 11: creating blocks
 
