@@ -1,7 +1,6 @@
 package network
 
 import (
-	"bytes"
 	"fmt"
 	"sync"
 
@@ -11,7 +10,7 @@ import (
 type LocalTransport struct {
 	addr NetAddr
 	// transport responsible for maintaining and connecting to
-	//peers, use a map to track them
+	// peers, use a map to track them
 	peers     map[NetAddr]*LocalTransport
 	m         sync.RWMutex
 	consumeCh chan RPC
@@ -24,7 +23,7 @@ func NewLocalTransport(addr NetAddr) *LocalTransport {
 		consumeCh: make(chan RPC, 1024),
 		peers:     make(map[NetAddr]*LocalTransport),
 		// TODO functional opts
-		logger: zap.L().Named("transport"),
+		logger: zap.L().Named("transport").Named(string(addr)),
 	}
 }
 
@@ -32,9 +31,12 @@ func (lt *LocalTransport) Consume() <-chan RPC {
 	return lt.consumeCh
 }
 
-func (lt *LocalTransport) Broadcast(payload []byte) error {
+func (lt *LocalTransport) Broadcast(payload Payload) error {
 	for _, p := range lt.peers {
-		err := lt.SendMessage(p.Addr(), payload)
+		if payload.data == nil {
+			return fmt.Errorf("refusing to send nil payload")
+		}
+		err := lt.Send(p.Addr(), payload)
 		if err != nil {
 			return err
 		}
@@ -62,10 +64,11 @@ func (lt *LocalTransport) Addr() NetAddr {
 	return lt.addr
 }
 
-func (lt *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
+func (lt *LocalTransport) Send(to NetAddr, payload Payload) error {
 	lt.logger.Debug("send message",
 		zap.String("from", string(lt.Addr())),
 		zap.String("to", string(to)),
+		zap.Int("msg length", len(payload.data)),
 	)
 
 	lt.m.RLock()
@@ -78,7 +81,7 @@ func (lt *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
 
 	msg := RPC{
 		From:    lt.addr,
-		Payload: bytes.NewReader(payload),
+		Content: payload.Reader(),
 	}
 
 	// this is kind of hacky b/c it's using the private

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -32,6 +33,17 @@ func TestBlock_SignAndVerify(t *testing.T) {
 	b.Validator = wrongPubKey
 	assert.Error(t, b.Verify())
 
+}
+
+func TestBlockEncodeDecode(t *testing.T) {
+	b := randomGenesisBlock(t)
+	buf := &bytes.Buffer{}
+	assert.NoError(t, NewDefaultBlockEncoder(buf).Encode(b))
+	got := randomGenesisBlock(t)
+	assert.NotEqual(t, b, got)
+	assert.NoError(t, NewDefaultBlockDecoder(buf).Decode(got))
+
+	assert.Equal(t, b, got)
 }
 
 func randomBlock(t *testing.T, height uint32, prevBlockHash types.Hash) *Block {

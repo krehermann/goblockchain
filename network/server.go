@@ -57,7 +57,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		opts.BlockTime = defaultBlockTime
 	}
 	if opts.RPCDecodeFunc == nil {
-		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
+		opts.RPCDecodeFunc = ExtractMessageFromRPC
 	}
 	if opts.ID == "" {
 		opts.ID = strconv.FormatInt(int64(rand.Intn(1000)), 10)
@@ -97,14 +97,39 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 
 	case *core.Transaction:
 		s.logger.Info("ProcessMessage",
-			zap.String("from", string(dmsg.From)),
-			zap.String("type", MessageTypeTx.String()))
+			zap.String("type", MessageTypeTx.String()),
+			zap.String("from", string(dmsg.From)))
 
 		return s.handleTransaction(t)
-
+	case *core.Block:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeBlock.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleBlock(t)
 	default:
+		s.logger.Info("ProcessMessage",
+			zap.Any("type", t),
+			zap.String("from", string(dmsg.From)))
+
 		return fmt.Errorf("invalid decoded message %v", t)
 	}
+}
+
+func (s *Server) handleBlock(b *core.Block) error {
+	s.logger.Info("handleBlock",
+		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
+	)
+	err := s.chain.AddBlock(b)
+	if err != nil {
+		return err
+	}
+	go func() {
+		err := s.broadcastBlock(b)
+		if err != nil {
+			s.errChan <- err
+		}
+	}()
+	return nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -165,6 +190,7 @@ loop:
 			decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
 			if err != nil {
 				s.errChan <- err
+				continue
 			}
 			err = s.ProcessMessage(decodedMsg)
 			if err != nil {
@@ -199,7 +225,10 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 
 	if isNewTx {
 		go func() {
-			s.errChan <- s.broadcastTx(tx)
+			err := s.broadcastTx(tx)
+			if err != nil {
+				s.errChan <- err
+			}
 		}()
 	}
 	return err
@@ -217,17 +246,32 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcast(msg *Message) error {
-	payload, err := msg.Bytes()
+	data, err := msg.Bytes()
 	if err != nil {
 		return err
 	}
+	if data == nil {
+		panic("nil payload")
+	}
 
 	for _, trans := range s.Transports {
-		if err := trans.Broadcast(payload); err != nil {
+		if err := trans.Broadcast(CreatePayload(data)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Server) broadcastBlock(b *core.Block) error {
+	s.logger.Info("broadcast block",
+		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
+	)
+	msg, err := newMessageFromBlock(b)
+	if err != nil {
+		return err
+	}
+	return s.broadcast(msg)
+
 }
 
 func (s *Server) createNewBlock() error {
@@ -255,9 +299,16 @@ func (s *Server) createNewBlock() error {
 	if err != nil {
 		return err
 	}
+	go func() {
+		err := s.broadcastBlock(block)
+		if err != nil {
+			s.errChan <- err
+		}
+	}()
 	// remember to clear our mempool after adding a block
 	// would like to make this cleaner
 	s.mempool.ClearPending()
+
 	return nil
 }
 
@@ -265,12 +316,12 @@ func (s *Server) initTransports() {
 	// make each transport listen for messages
 	for _, tr := range s.Transports {
 		go func(tr Transport) {
-			for msg := range tr.Consume() {
+			for rpc := range tr.Consume() {
 				// we need to do something with the messages
 				// we would like to keep it simple and flexible
 				// to that end, we simply forward to a channel
 				// owned by the server
-				s.rpcChan <- msg
+				s.rpcChan <- rpc
 			}
 		}(tr)
 

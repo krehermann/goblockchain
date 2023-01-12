@@ -1,3 +1,15 @@
+Episode 13: broadcasting blocks
+
+I wasted a lot of time because I didn't have a test for DefaultRPCDecodeFunc.
+
+I implemented the block broadcasting, but forget a single line in that func and chased 
+my tail for a while. Next time, add a unit test first
+
+Then, when I figured it out, i attempted to add a unit test, but got very confused
+with RPC vs Message vs Decoded Message.
+
+Added some clarity by changing the transport interface and adding comments
+
 Self Study: Update the mempool implementation
 
 Anthony did this offline here

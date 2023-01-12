@@ -20,14 +20,14 @@ func TestConnect(t *testing.T) {
 	assert.Equal(t, tra.peers[trb.addr], trb)
 	assert.Equal(t, trb.peers[tra.addr], tra)
 
-	msg := []byte("hi")
-	assert.NoError(t, tra.SendMessage(trb.addr, msg))
+	p := CreatePayload([]byte("hi"))
+	assert.NoError(t, tra.Send(trb.addr, p))
 
 	got := <-trb.Consume()
 
-	b, err := ioutil.ReadAll(got.Payload)
+	b, err := ioutil.ReadAll(got.Content)
 	assert.NoError(t, err)
-	assert.Equal(t, msg, b)
+	assert.Equal(t, p.data, b)
 	assert.Equal(t, tra.addr, got.From)
 
 }
@@ -40,22 +40,25 @@ func TestLocalTransport_Broadcast(t *testing.T) {
 
 	trA.Connect(trB)
 	trA.Connect(trC)
-	payload := []byte("hi there")
+	payload := CreatePayload([]byte("hi there"))
 
 	assert.NoError(t, trA.Broadcast(payload))
 
 	rpcB := <-trB.Consume()
 	assert.Equal(t, trA.Addr(), rpcB.From)
-	gotB := make([]byte, len(payload))
-	n, err := rpcB.Payload.Read(gotB)
-	assert.Equal(t, n, len(payload))
+
+	gotB := make([]byte, len(payload.data))
+
+	n, err := rpcB.Content.Read(gotB)
+	assert.Equal(t, n, len(payload.data))
+
 	assert.NoError(t, err)
-	assert.Equal(t, payload, gotB)
+	assert.Equal(t, payload.data, gotB)
 
 	rpcC := <-trC.Consume()
 	assert.Equal(t, trA.Addr(), rpcC.From)
-	gotC, err := ioutil.ReadAll(rpcC.Payload)
+	gotC, err := ioutil.ReadAll(rpcC.Content)
 	assert.NoError(t, err)
-	assert.Equal(t, payload, gotC)
+	assert.Equal(t, payload.data, gotC)
 
 }

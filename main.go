@@ -32,22 +32,22 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	local := network.NewLocalTransport("local")
+	peer0 := network.NewLocalTransport("peer0")
 	peer1 := network.NewLocalTransport("peer1")
 	peer2 := network.NewLocalTransport("peer2")
-	peer3 := network.NewLocalTransport("peer3")
 
-	fatalIfErr(local.Connect(peer1))
-	fatalIfErr(peer1.Connect(local))
+	fatalIfErr(cancelFunc, local.Connect(peer0))
+	fatalIfErr(cancelFunc, peer0.Connect(local))
 
-	fatalIfErr(peer1.Connect(peer2))
-	fatalIfErr(peer2.Connect(peer3))
+	fatalIfErr(cancelFunc, peer0.Connect(peer1))
+	fatalIfErr(cancelFunc, peer1.Connect(peer2))
 
-	initRemoteServers(ctx, peer1, peer2, peer3)
+	initRemoteServers(ctx, peer0, peer1, peer2)
 
 	go func() {
 		cnt := 0
 		for {
-			fatalIfErr(sendRandomTransaction(peer1, local))
+			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
 			time.Sleep(1 * time.Second)
 			cnt += 1
 		}
@@ -63,13 +63,14 @@ func main() {
 func initRemoteServers(ctx context.Context, trs ...network.Transport) {
 	zap.L().Info("initRemoteServers")
 
+	ctx, cancelFunc := context.WithCancel(ctx)
 	for i, tr := range trs {
 		s := mustMakeServer(makeNonValidatorOpts(
 			fmt.Sprintf("remote-%d", i), tr))
 
 		go func() {
 			err := s.Start(ctx)
-			fatalIfErr(err)
+			fatalIfErr(cancelFunc, err)
 		}()
 	}
 
@@ -77,7 +78,7 @@ func initRemoteServers(ctx context.Context, trs ...network.Transport) {
 
 func mustMakeServer(opts network.ServerOpts) *network.Server {
 	s, err := network.NewServer(opts)
-	fatalIfErr(err)
+	fatalIfErr(nil, err)
 
 	return s
 }
@@ -100,9 +101,6 @@ func makeNonValidatorOpts(id string, tr network.Transport) network.ServerOpts {
 
 // helper for testing. remove later
 func sendRandomTransaction(from, to network.Transport) error {
-	zap.L().Info("sendTransaction",
-		zap.String("from", string(from.Addr())),
-		zap.String("to", string(to.Addr())))
 	privKey := crypto.MustGeneratePrivateKey()
 	data := []byte(strconv.FormatInt(rand.Int63(), 10))
 
@@ -118,16 +116,20 @@ func sendRandomTransaction(from, to network.Transport) error {
 		return err
 	}
 	msg := network.NewMessage(network.MessageTypeTx, txEncoded.Bytes())
-	payload, err := msg.Bytes()
+	d, err := msg.Bytes()
 	if err != nil {
 		return err
 	}
-	return from.SendMessage(to.Addr(), payload)
+	payload := network.CreatePayload(d)
+	return from.Send(to.Addr(), payload)
 
 }
 
-func fatalIfErr(err error) {
+func fatalIfErr(cancelFn context.CancelFunc, err error) {
 	if err != nil {
 		zap.L().Fatal(err.Error())
+		if cancelFn != nil {
+			cancelFn()
+		}
 	}
 }
