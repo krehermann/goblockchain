@@ -3,9 +3,10 @@ package vm
 type Instruction byte
 
 const (
-	InstructionPush Instruction = 0x0a //10
-	InstructionAdd  Instruction = 0x0b //11
-
+	InstructionPushInt   Instruction = 0x0a //10
+	InstructionAddInt    Instruction = 0x0b //11
+	InstructionPushBytes Instruction = 0x0c
+	InstructionPack      Instruction = 0x0d
 )
 
 // example

@@ -7,7 +7,7 @@ import (
 
 type Stack struct {
 	lock sync.RWMutex
-	data []byte
+	data []any
 	ptr  int
 
 	depth int
@@ -30,11 +30,11 @@ func NewStack(opts ...StackOpt) *Stack {
 	for _, opt := range opts {
 		s = opt(s)
 	}
-	s.data = make([]byte, s.depth)
+	s.data = make([]any, s.depth)
 	return s
 }
 
-func (s *Stack) Push(b byte) error {
+func (s *Stack) Push(b any) error {
 	if s.ptr == s.depth {
 		return fmt.Errorf("stack overflow")
 	}
@@ -47,9 +47,9 @@ func (s *Stack) Push(b byte) error {
 	return nil
 }
 
-func (s *Stack) Pop() (byte, error) {
+func (s *Stack) Pop() (any, error) {
 	if s.Empty() {
-		return 0x0, fmt.Errorf("stack empty")
+		return nil, fmt.Errorf("stack empty")
 	}
 
 	s.lock.Lock()
@@ -75,9 +75,9 @@ func (s *Stack) Len() int {
 	return s.ptr
 }
 
-func (s *Stack) Read(pos int) (byte, error) {
+func (s *Stack) Read(pos int) (any, error) {
 	if pos >= s.Len() || pos < 0 {
-		return 0x0, fmt.Errorf("read out of range len %d, pos %d", s.Len(), pos)
+		return nil, fmt.Errorf("read out of range len %d, pos %d", s.Len(), pos)
 	}
 
 	s.lock.RLock()

@@ -68,13 +68,13 @@ func (vm *VM) Run() error {
 
 func (vm *VM) Exec(inst Instruction) error {
 	switch inst {
-	case InstructionPush:
-		d := vm.data[vm.ip-1]
-		vm.logger.Debug("pushing to stack",
-			zap.Any("b", d),
+	case InstructionPushInt:
+		d := int(vm.data[vm.ip-1])
+		vm.logger.Debug("pushing int to stack",
+			zap.Int("d", d),
 		)
-		return vm.push(d)
-	case InstructionAdd:
+		return vm.Stack.Push(d)
+	case InstructionAddInt:
 		vm.logger.Debug("add")
 
 		a, err := vm.Stack.Read(vm.Stack.Len() - 1)
@@ -85,20 +85,47 @@ func (vm *VM) Exec(inst Instruction) error {
 		if err != nil {
 			return err
 		}
-
-		aInt, bInt := int(a), int(b)
+		// TODO this is needs to be fixed to handle broader type sytem
+		// after the stack can hold []any
+		// current there is skew between the []data byte in the tx
+		// and the []data any in the stack. probably need
+		// as deserializer for the tx data...
+		aInt, bInt := a.(int), b.(int)
 		val := aInt + bInt
 		vm.logger.Debug("add",
-			zap.Int("a", aInt),
-			zap.Int("b", bInt),
-			zap.Int("result", val),
+			zap.Int("a", int(aInt)),
+			zap.Int("b", int(bInt)),
+			zap.Int("result", int(val)),
 		)
 
-		return vm.Stack.Push(byte(val))
+		return vm.Stack.Push(val)
+	case InstructionPushBytes:
+		d := byte(vm.data[vm.ip-1])
+		vm.logger.Debug("pushing byte to stack",
+			zap.Any("d", d),
+		)
+		return vm.Stack.Push(d)
+
+	case InstructionPack:
+		// need to get byte length and read them
+		v, err := vm.Stack.Pop()
+		if err != nil {
+			return err
+		}
+
+		l := v.(int)
+		data := make([]byte, l)
+		//		stackPosStart := vm.Stack.Len() - 2
+		for i := 0; i < l; i++ {
+
+			// insert in reverse order
+			val, err := vm.Stack.Pop() // vm.Stack.Read(stackPosStart - i)
+			if err != nil {
+				return err
+			}
+			data[l-(i+1)] = val.(byte)
+		}
+		vm.Stack.Push(data)
 	}
 	return nil
-}
-
-func (vm *VM) push(b byte) error {
-	return vm.Stack.Push(b)
 }

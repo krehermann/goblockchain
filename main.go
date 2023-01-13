@@ -146,10 +146,10 @@ func transactionAdder() *core.Transaction {
 	b := 2
 	txBytes := []byte{
 		byte(a),
-		byte(vm.InstructionPush),
+		byte(vm.InstructionPushInt),
 		byte(b),
-		byte(vm.InstructionPush),
-		byte(vm.InstructionAdd),
+		byte(vm.InstructionPushInt),
+		byte(vm.InstructionAddInt),
 	}
 
 	return core.NewTransaction(txBytes)

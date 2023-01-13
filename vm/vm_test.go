@@ -25,15 +25,64 @@ func TestVM_Run(t *testing.T) {
 			fields: fields{
 				data: []byte{
 					0x2,
-					byte(InstructionPush),
+					byte(InstructionPushInt),
 					0x4,
-					byte(InstructionPush),
-					byte(InstructionAdd)},
+					byte(InstructionPushInt),
+					byte(InstructionAddInt)},
 
 				logger: zap.Must(zap.NewDevelopment()),
 				stack:  NewStack(),
 			},
-			check: checkAdd,
+			check: checkAdd2_4,
+		},
+
+		{
+			name: "add 0 + 1",
+			fields: fields{
+				data: []byte{
+					0x0,
+					byte(InstructionPushInt),
+					0x1,
+					byte(InstructionPushInt),
+					byte(InstructionAddInt)},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkAdd0_1,
+		},
+
+		{
+			name: "one byte",
+			fields: fields{
+				data: []byte{
+					byte('a'),
+					byte(InstructionPushBytes),
+				},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkPushOneByte,
+		},
+
+		{
+			name: "pack",
+			fields: fields{
+				data: []byte{
+					byte('a'),
+					byte(InstructionPushBytes),
+					byte('b'),
+					byte(InstructionPushBytes),
+					byte(2),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+				},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkPack,
 		},
 	}
 	for _, tt := range tests {
@@ -54,13 +103,43 @@ func TestVM_Run(t *testing.T) {
 	}
 }
 
-func checkAdd(t *testing.T, vm *VM) {
+func checkAdd2_4(t *testing.T, vm *VM) {
 	wantLen := 3
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
 
 	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
 	assert.NoError(t, err)
-	assert.Equal(t, 2+4, int(addResult))
+	assert.Equal(t, 2+4, addResult)
 
+}
+
+func checkAdd0_1(t *testing.T, vm *VM) {
+	wantLen := 3
+	got := vm.Stack.Len()
+	assert.Equal(t, wantLen, got)
+
+	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0+1, addResult)
+
+}
+
+func checkPushOneByte(t *testing.T, vm *VM) {
+	wantLen := 1
+	got := vm.Stack.Len()
+	assert.Equal(t, wantLen, got)
+	val, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	assert.NoError(t, err)
+	assert.Equal(t, byte('a'), val)
+
+}
+
+func checkPack(t *testing.T, vm *VM) {
+	wantLen := 1
+	got := vm.Stack.Len()
+	assert.Equal(t, wantLen, got)
+	val, err := vm.Stack.Pop()
+	assert.NoError(t, err)
+	assert.Equal(t, []byte{'a', 'b'}, val)
 }
