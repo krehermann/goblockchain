@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 )
 
@@ -54,10 +53,11 @@ func main() {
 	}()
 
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
-	go localServer.Start(context.Background())
+	go localServer.Start(ctx)
 
 	time.Sleep(10 * time.Second)
 	cancelFunc()
+	time.Sleep(2 * time.Second)
 }
 
 func initRemoteServers(ctx context.Context, trs ...network.Transport) {
@@ -102,9 +102,13 @@ func makeNonValidatorOpts(id string, tr network.Transport) network.ServerOpts {
 // helper for testing. remove later
 func sendRandomTransaction(from, to network.Transport) error {
 	privKey := crypto.MustGeneratePrivateKey()
-	data := []byte(strconv.FormatInt(rand.Int63(), 10))
 
-	tx := core.NewTransaction(data)
+	/*
+		data := []byte(strconv.FormatInt(rand.Int63(), 10))
+
+		tx := core.NewTransaction(data)
+	*/
+	tx := transactionAdder()
 	err := tx.Sign(privKey)
 	if err != nil {
 		return err
@@ -132,4 +136,22 @@ func fatalIfErr(cancelFn context.CancelFunc, err error) {
 			cancelFn()
 		}
 	}
+}
+
+func transactionAdder() *core.Transaction {
+	//	a := rand.Intn(8)
+	//	b := rand.Intn(8)
+
+	a := 5
+	b := 2
+	txBytes := []byte{
+		byte(a),
+		byte(vm.InstructionPush),
+		byte(b),
+		byte(vm.InstructionPush),
+		byte(vm.InstructionAdd),
+	}
+
+	return core.NewTransaction(txBytes)
+
 }

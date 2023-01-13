@@ -1,0 +1,87 @@
+package vm
+
+import (
+	"fmt"
+	"sync"
+)
+
+type Stack struct {
+	lock sync.RWMutex
+	data []byte
+	ptr  int
+
+	depth int
+}
+
+type StackOpt func(*Stack) *Stack
+
+func MaxStack(max int) StackOpt {
+	return func(s *Stack) *Stack {
+		s.depth = max
+		return s
+	}
+}
+
+func NewStack(opts ...StackOpt) *Stack {
+	s := &Stack{
+		ptr:   0,
+		depth: 1024,
+	}
+	for _, opt := range opts {
+		s = opt(s)
+	}
+	s.data = make([]byte, s.depth)
+	return s
+}
+
+func (s *Stack) Push(b byte) error {
+	if s.ptr == s.depth {
+		return fmt.Errorf("stack overflow")
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.data[s.ptr] = b
+	s.ptr += 1
+
+	return nil
+}
+
+func (s *Stack) Pop() (byte, error) {
+	if s.Empty() {
+		return 0x0, fmt.Errorf("stack empty")
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	// ptr is at the next write slot, one ahead of the read slot
+	b := s.data[s.ptr-1]
+	s.ptr -= 1
+
+	return b, nil
+}
+
+func (s *Stack) Empty() bool {
+	s.lock.RLock()
+	v := s.ptr
+	s.lock.RUnlock()
+
+	return v == 0
+}
+
+func (s *Stack) Len() int {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.ptr
+}
+
+func (s *Stack) Read(pos int) (byte, error) {
+	if pos >= s.Len() || pos < 0 {
+		return 0x0, fmt.Errorf("read out of range len %d, pos %d", s.Len(), pos)
+	}
+
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.data[pos], nil
+
+}

@@ -152,6 +152,7 @@ errorLoop:
 				s.logger.Error(err.Error())
 			}
 		case <-ctx.Done():
+			s.logger.Info("received done")
 			cancelFunc()
 			break errorLoop
 		}
@@ -200,6 +201,7 @@ loop:
 			s.logger.Info("handleRpcs received quit signal")
 			break loop
 		case <-ctx.Done():
+			s.logger.Info("handleRpcs: received done")
 			break loop
 		}
 	}

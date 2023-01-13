@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 )
 
@@ -55,6 +56,24 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 	if err != nil {
 		return fmt.Errorf("add block: invalid block: %w", err)
 	}
+
+	// run vm code
+	// KISS for now -- just make a vm
+
+	for _, tx := range b.Transactions {
+		vm := vm.NewVM(tx.Data, vm.LoggerOpt(bc.logger))
+		err := vm.Run()
+		if err != nil {
+			return fmt.Errorf("add block: vm failed to run tx %s, %w",
+				tx.Hash(&DefaultTxHasher{}).Prefix(),
+				err)
+		}
+		val, _ := vm.Stack.Read(vm.Stack.Len() - 1)
+		bc.logger.Debug("vm result",
+			zap.Any("val", val),
+		)
+	}
+
 	return bc.persistBlock(b)
 }
 
