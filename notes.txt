@@ -1,3 +1,17 @@
+Episode 17: virtual machine contract state
+https://youtu.be/rLxm4F6V1K4
+
+Add generic state tracker to vm package. Diverged from videos by
+making the state track `any` rather `[]byte`. Made the interface between
+the stack and state easy, but perhaps will bite me later and need to be 
+refactored.
+
+structured table-driven testing paid dividends. i never would have been able
+to follow all the byte codes and logic in the video. instead, i got lucky a 
+couple Episodes ago and elected to have table-driven test for vm.Run, which
+made the implementation in this segment much easier to think about than the
+hardcode details in the live stream 
+
 Episode 13: broadcasting blocks
 
 I wasted a lot of time because I didn't have a test for DefaultRPCDecodeFunc.

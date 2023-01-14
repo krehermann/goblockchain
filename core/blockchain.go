@@ -21,6 +21,9 @@ type Blockchain struct {
 
 	validator Validator
 	logger    *zap.Logger
+
+	// TODO make State interface
+	contractState *vm.State
 }
 
 type BlockchainOpt func(bc *Blockchain) *Blockchain
@@ -34,9 +37,10 @@ func WithLogger(l *zap.Logger) BlockchainOpt {
 
 func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 	bc := &Blockchain{
-		headers: []*Header{},
-		store:   NewMemStore(),
-		logger:  zap.L().Named("blockchain"),
+		headers:       []*Header{},
+		store:         NewMemStore(),
+		logger:        zap.L().Named("blockchain"),
+		contractState: vm.NewState(),
 	}
 
 	// this is a bit weird. need to be able to configure the validator
@@ -61,13 +65,16 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 	// KISS for now -- just make a vm
 
 	for _, tx := range b.Transactions {
-		vm := vm.NewVM(tx.Data, vm.LoggerOpt(bc.logger))
+		vm := vm.NewVM(tx.Data,
+			vm.ContractStateOpt(bc.contractState),
+			vm.LoggerOpt(bc.logger))
 		err := vm.Run()
 		if err != nil {
 			return fmt.Errorf("add block: vm failed to run tx %s, %w",
 				tx.Hash(&DefaultTxHasher{}).Prefix(),
 				err)
 		}
+		// result is the last thing on the stack
 		val, _ := vm.Stack.Read(vm.Stack.Len() - 1)
 		bc.logger.Debug("vm result",
 			zap.Any("val", val),

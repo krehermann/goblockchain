@@ -84,14 +84,40 @@ func TestVM_Run(t *testing.T) {
 			},
 			check: checkPack,
 		},
+
+		{
+			name: "store xx:7",
+			fields: fields{
+				data: []byte{
+					// make the xx key
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte(2),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+					// make the val
+					byte(7),
+					byte(InstructionPushInt),
+					// store
+					byte(InstructionStore),
+				},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkStorexx7,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			vm := &VM{
-				data:   tt.fields.data,
-				ip:     tt.fields.ip,
-				logger: tt.fields.logger,
-				Stack:  tt.fields.stack,
+				data:          tt.fields.data,
+				ip:            tt.fields.ip,
+				logger:        tt.fields.logger,
+				Stack:         tt.fields.stack,
+				contractState: NewState(),
 			}
 			if err := vm.Run(); (err != nil) != tt.wantErr {
 				t.Errorf("VM.Run() error = %v, wantErr %v", err, tt.wantErr)
@@ -142,4 +168,15 @@ func checkPack(t *testing.T, vm *VM) {
 	val, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, []byte{'a', 'b'}, val)
+}
+
+func checkStorexx7(t *testing.T, vm *VM) {
+
+	want := NewState()
+	assert.NoError(t, want.Put(Key("xx"), 7))
+
+	got := vm.contractState
+
+	assert.Equal(t, want.data, got.data)
+
 }

@@ -12,8 +12,10 @@ type VM struct {
 	// instruction pointer
 	ip int
 
-	Stack  *Stack
-	logger *zap.Logger
+	Stack *Stack
+
+	contractState *State
+	logger        *zap.Logger
 }
 
 type VMOpt func(*VM) *VM
@@ -25,12 +27,20 @@ func LoggerOpt(l *zap.Logger) VMOpt {
 	}
 }
 
+func ContractStateOpt(cs *State) VMOpt {
+	return func(vm *VM) *VM {
+		vm.contractState = cs
+		return vm
+	}
+}
+
 func NewVM(data []byte, opts ...VMOpt) *VM {
 	vm := &VM{
-		data:   data,
-		ip:     0,
-		Stack:  NewStack(),
-		logger: zap.L(),
+		data:          data,
+		ip:            0,
+		Stack:         NewStack(),
+		logger:        zap.L(),
+		contractState: NewState(),
 	}
 
 	for _, opt := range opts {
@@ -126,6 +136,43 @@ func (vm *VM) Exec(inst Instruction) error {
 			data[l-(i+1)] = val.(byte)
 		}
 		vm.Stack.Push(data)
+	case InstructionStore:
+
+		val, err := vm.Stack.Read(vm.Stack.Len() - 1)
+		if err != nil {
+			return err
+		}
+		key, err := vm.Stack.Read(vm.Stack.Len() - 2)
+		if err != nil {
+			return err
+		}
+		k := mustBeKey(key)
+		vm.logger.Debug("store",
+			zap.Any("k", k),
+			zap.Any("v", val),
+		)
+		//		return vm.contractState.Put(mustBeKey(key), mustBeVal(val))
+		return vm.contractState.Put(k, val)
+
 	}
 	return nil
 }
+
+func mustBeKey(k any) Key {
+	s := string(k.([]byte))
+	return Key(s)
+}
+
+/*
+// hack. need way to convert data from the stack to
+// something that can be put into State
+func mustBeVal(v any) []byte {
+	switch t := v.(type) {
+	case []byte:
+		return t
+	case int:
+		return []byte{byte(t)}
+	}
+	return nil
+}
+*/
