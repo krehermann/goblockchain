@@ -87,11 +87,11 @@ func (vm *VM) Exec(inst Instruction) error {
 	case InstructionAddInt:
 		vm.logger.Debug("add")
 
-		a, err := vm.Stack.Read(vm.Stack.Len() - 1)
+		a, err := vm.Stack.Pop()
 		if err != nil {
 			return err
 		}
-		b, err := vm.Stack.Read(vm.Stack.Len() - 2)
+		b, err := vm.Stack.Pop()
 		if err != nil {
 			return err
 		}
@@ -138,11 +138,11 @@ func (vm *VM) Exec(inst Instruction) error {
 		vm.Stack.Push(data)
 	case InstructionStore:
 
-		val, err := vm.Stack.Read(vm.Stack.Len() - 1)
+		val, err := vm.Stack.Pop()
 		if err != nil {
 			return err
 		}
-		key, err := vm.Stack.Read(vm.Stack.Len() - 2)
+		key, err := vm.Stack.Pop()
 		if err != nil {
 			return err
 		}

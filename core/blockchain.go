@@ -75,7 +75,7 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 				err)
 		}
 		// result is the last thing on the stack
-		val, _ := vm.Stack.Read(vm.Stack.Len() - 1)
+		val, _ := vm.Stack.Peek()
 		bc.logger.Debug("vm result",
 			zap.Any("val", val),
 		)

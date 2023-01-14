@@ -130,22 +130,22 @@ func TestVM_Run(t *testing.T) {
 }
 
 func checkAdd2_4(t *testing.T, vm *VM) {
-	wantLen := 3
+	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
 
-	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	addResult, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, 2+4, addResult)
 
 }
 
 func checkAdd0_1(t *testing.T, vm *VM) {
-	wantLen := 3
+	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
 
-	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	addResult, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, 0+1, addResult)
 
@@ -155,7 +155,7 @@ func checkPushOneByte(t *testing.T, vm *VM) {
 	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
-	val, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	val, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, byte('a'), val)
 

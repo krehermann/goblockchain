@@ -75,7 +75,11 @@ func (s *Stack) Len() int {
 	return s.ptr
 }
 
-func (s *Stack) Read(pos int) (any, error) {
+func (s *Stack) Peek() (any, error) {
+	return s.read(s.Len() - 1)
+}
+
+func (s *Stack) read(pos int) (any, error) {
 	if pos >= s.Len() || pos < 0 {
 		return nil, fmt.Errorf("read out of range len %d, pos %d", s.Len(), pos)
 	}
