@@ -109,6 +109,75 @@ func TestVM_Run(t *testing.T) {
 			},
 			check: checkStorexx7,
 		},
+
+		{
+			name: "store mutliple xx:7 yy:3",
+			fields: fields{
+				data: []byte{
+					// make the xx key
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte(2),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+					// make the val
+					byte(7),
+					byte(InstructionPushInt),
+					// store
+					byte(InstructionStore),
+
+					// make the xx key
+					byte('y'),
+					byte(InstructionPushBytes),
+					byte('y'),
+					byte(InstructionPushBytes),
+					byte(2),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+					// make the val
+					byte(3),
+					byte(InstructionPushInt),
+					// store
+					byte(InstructionStore),
+				},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkStoreMultiple,
+		},
+
+		{
+			name: "get",
+			fields: fields{
+				data: []byte{
+					// make the x key
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte(1),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+					// make the val
+					byte(7),
+					byte(InstructionPushInt),
+					// store
+					byte(InstructionStore),
+
+					byte('x'),
+					byte(InstructionPushBytes),
+					byte(1),
+					byte(InstructionPushInt),
+					byte(InstructionPack),
+					byte(InstructionGet),
+				},
+
+				logger: zap.Must(zap.NewDevelopment()),
+				stack:  NewStack(),
+			},
+			check: checkGet,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,22 +199,22 @@ func TestVM_Run(t *testing.T) {
 }
 
 func checkAdd2_4(t *testing.T, vm *VM) {
-	wantLen := 3
+	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
 
-	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	addResult, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, 2+4, addResult)
 
 }
 
 func checkAdd0_1(t *testing.T, vm *VM) {
-	wantLen := 3
+	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
 
-	addResult, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	addResult, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, 0+1, addResult)
 
@@ -155,7 +224,7 @@ func checkPushOneByte(t *testing.T, vm *VM) {
 	wantLen := 1
 	got := vm.Stack.Len()
 	assert.Equal(t, wantLen, got)
-	val, err := vm.Stack.Read(vm.Stack.Len() - 1)
+	val, err := vm.Stack.Pop()
 	assert.NoError(t, err)
 	assert.Equal(t, byte('a'), val)
 
@@ -179,4 +248,29 @@ func checkStorexx7(t *testing.T, vm *VM) {
 
 	assert.Equal(t, want.data, got.data)
 
+}
+
+func checkStoreMultiple(t *testing.T, vm *VM) {
+
+	want := NewState()
+	assert.NoError(t, want.Put(Key("xx"), 7))
+	assert.NoError(t, want.Put(Key("yy"), 3))
+
+	got := vm.contractState
+	assert.Equal(t, want.data, got.data)
+
+}
+
+// helper that checks the stack after x:7 is stored and x is Get'd
+func checkGet(t *testing.T, vm *VM) {
+	want := NewState()
+	expected := 7
+	assert.NoError(t, want.Put(Key("x"), expected))
+
+	got := vm.contractState
+	assert.Equal(t, want.data, got.data)
+
+	val, err := vm.Stack.Pop()
+	assert.NoError(t, err)
+	assert.Equal(t, expected, val)
 }

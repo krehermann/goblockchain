@@ -145,11 +145,27 @@ func transactionAdder() *core.Transaction {
 	a := 5
 	b := 2
 	txBytes := []byte{
+		// create bytes of key `abc`
+		// make the xx key
+		byte('a'),
+		byte(vm.InstructionPushBytes),
+		byte('b'),
+		byte(vm.InstructionPushBytes),
+		byte('c'),
+		byte(vm.InstructionPushBytes),
+		byte(3),
+		byte(vm.InstructionPushInt),
+		byte(vm.InstructionPack),
+
+		// put two numbers
 		byte(a),
 		byte(vm.InstructionPushInt),
 		byte(b),
 		byte(vm.InstructionPushInt),
+		// add,
 		byte(vm.InstructionAddInt),
+		// now the stack should be [abc], 7
+		byte(vm.InstructionStore),
 	}
 
 	return core.NewTransaction(txBytes)

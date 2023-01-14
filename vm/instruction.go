@@ -8,6 +8,7 @@ const (
 	InstructionPushBytes Instruction = 0x0c
 	InstructionPack      Instruction = 0x0d
 	InstructionStore     Instruction = 0x0f
+	InstructionGet       Instruction = 0x10
 )
 
 // example
