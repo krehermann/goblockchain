@@ -106,6 +106,18 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 			zap.String("type", MessageTypeBlock.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleBlock(t)
+	case *StatusMessageRequest:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeStatusRequest.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleStatusMessageRequest(t)
+
+	case *StatusMessageResponse:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeStatusResponse.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleStatusMessageResponse(t)
+
 	default:
 		s.logger.Info("ProcessMessage",
 			zap.Any("type", t),
@@ -113,6 +125,24 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 
 		return fmt.Errorf("invalid decoded message %v", t)
 	}
+}
+
+func (s *Server) handleStatusMessageResponse(smsg *StatusMessageResponse) error {
+	s.logger.Info("handleStatusMessageResponse",
+		zap.Any("status", smsg),
+	)
+
+	return nil
+}
+
+func (s *Server) handleStatusMessageRequest(smsg *StatusMessageRequest) error {
+	s.logger.Info("handleStatusMessageRequest",
+		zap.Any("status", smsg),
+	)
+
+	// send my status to the requestor
+
+	return nil
 }
 
 func (s *Server) handleBlock(b *core.Block) error {
@@ -137,11 +167,17 @@ func (s *Server) Start(ctx context.Context) error {
 		zap.String("id", s.ID),
 	)
 	ctx, cancelFunc := context.WithCancel(ctx)
+	defer cancelFunc()
 
 	s.initTransports()
 	go s.handleRpcs(ctx)
 	if s.isValidator {
 		go s.handleValidtion(ctx)
+	}
+
+	err := s.sendStartupStatusRequests()
+	if err != nil {
+		return err
 	}
 
 errorLoop:
@@ -158,6 +194,36 @@ errorLoop:
 		}
 	}
 
+	return nil
+}
+
+func (s *Server) currentStatus() (*StatusMessageResponse, error) {
+	status := new(StatusMessageResponse)
+
+	hght := s.chain.Height()
+	ver := uint32(0)
+	header, err := s.chain.GetHeader(hght)
+	if err == nil {
+		ver = header.Version
+	}
+	status.CurrentHeight = hght
+	status.Version = ver
+	status.ServerID = s.ID
+	return status, nil
+}
+
+func (s *Server) sendStartupStatusRequests() error {
+	req := new(StatusMessageRequest)
+	req.RequestorID = s.ID
+	s.logger.Debug("sending startup status",
+		zap.Any("msg", req),
+	)
+
+	msg, err := newMessageFromStatusMessageRequest(req)
+	if err != nil {
+		return err
+	}
+	s.broadcast(msg)
 	return nil
 }
 
@@ -190,12 +256,12 @@ loop:
 		case rpc := <-s.rpcChan:
 			decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
 			if err != nil {
-				s.errChan <- err
+				s.errChan <- fmt.Errorf("server failed to decode rpc: %w", err)
 				continue
 			}
 			err = s.ProcessMessage(decodedMsg)
 			if err != nil {
-				s.errChan <- err
+				s.errChan <- fmt.Errorf("handle rpc: failed to process decoded message: %w", err)
 			}
 		case <-s.quitChan:
 			s.logger.Info("handleRpcs received quit signal")

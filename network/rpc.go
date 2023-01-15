@@ -16,50 +16,6 @@ type RPC struct {
 	Content io.Reader
 }
 
-// MessageType identities the type data enveloped in a Message
-type MessageType byte
-
-const (
-	MessageTypeTx MessageType = iota
-	MessageTypeBlock
-)
-
-var MessageTypes = []MessageType{MessageTypeTx, MessageTypeBlock}
-
-func (mt MessageType) String() string {
-	var out string
-	switch mt {
-	case MessageTypeBlock:
-		out = "MessageTypeBlock"
-	case MessageTypeTx:
-		out = "MessageTypeTx"
-	default:
-		out = "unknown"
-	}
-	return out
-}
-
-// Message is default data representation via RPCs
-type Message struct {
-	// these need to be public so that there can be encoded/decoded
-	Header MessageType
-	Data   []byte
-}
-
-func NewMessage(t MessageType, data []byte) *Message {
-	return &Message{
-		Header: t,
-		Data:   data,
-	}
-}
-
-// gob encoding of the message struct.
-func (m *Message) Bytes() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := gob.NewEncoder(buf).Encode(m)
-	return buf.Bytes(), err
-}
-
 // generic deserialization for consuming RPCs
 type DecodedMessage struct {
 	From NetAddr
@@ -88,6 +44,9 @@ func ExtractMessageFromRPC(rpc RPC) (*DecodedMessage, error) {
 	if err != nil {
 		return &out, err
 	}
+	if msg.Data == nil {
+		return &out, fmt.Errorf("ExtractMessageFromRPC: nil data")
+	}
 	msgReader := bytes.NewReader(msg.Data)
 
 	switch msg.Header {
@@ -97,7 +56,9 @@ func ExtractMessageFromRPC(rpc RPC) (*DecodedMessage, error) {
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode transacation from %s: %w", rpc.From, err)
 		}
-		out = DecodedMessage{From: rpc.From, Data: tx}
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: tx}
 
 	case MessageTypeBlock:
 		b := new(core.Block)
@@ -105,7 +66,30 @@ func ExtractMessageFromRPC(rpc RPC) (*DecodedMessage, error) {
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode block from %s: %w", rpc.From, err)
 		}
-		out = DecodedMessage{From: rpc.From, Data: b}
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: b}
+	case MessageTypeStatusRequest:
+		sMsg := new(StatusMessageRequest)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode status message from %s: %w", rpc.From, err)
+		}
+
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
+	case MessageTypeStatusResponse:
+		sMsg := new(StatusMessageResponse)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode status message from %s: %w", rpc.From, err)
+		}
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
 	default:
 		return &out, fmt.Errorf("invalid message type %s", msg.Header)
 
@@ -124,32 +108,4 @@ func contentToMessage(rpc RPC) (Message, error) {
 
 type RPCProcessor interface {
 	ProcessMessage(*DecodedMessage) error
-}
-
-// helper to create a Message from Tx
-// note to self: need to live in this package rather than func on tx
-// because it is the right layering -- messages can wrap anything
-// making a func on tx to create a message would be dependency invertion
-func newMessageFromTransaction(tx *core.Transaction) (*Message, error) {
-	buf := &bytes.Buffer{}
-	// TODO does this encoder need to be a parameter?
-	err := tx.Encode(core.NewGobTxEncoder(buf))
-	if err != nil {
-		return nil, err
-	}
-	return NewMessage(MessageTypeTx, buf.Bytes()), nil
-}
-
-// helper to create a Message from block
-// note to self: need to live in this package rather than func on tx
-// because it is the right layering -- messages can wrap anything
-// making a func on tx to create a message would be dependency invertion
-func newMessageFromBlock(b *core.Block) (*Message, error) {
-	buf := &bytes.Buffer{}
-	// TODO does this encoder need to be a parameter?
-	err := b.Encode(core.NewDefaultBlockEncoder(buf))
-	if err != nil {
-		return nil, err
-	}
-	return NewMessage(MessageTypeBlock, buf.Bytes()), nil
 }
