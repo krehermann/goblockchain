@@ -1,3 +1,7 @@
+Add network tests
+
+The code in main was too confusing. Turn it into a real test
+
 Episode 19: syncing blocks
 https://youtu.be/zZkLI3FlW6k
 
