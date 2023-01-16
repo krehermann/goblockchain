@@ -204,6 +204,7 @@ errorLoop:
 		case <-ctx.Done():
 			s.logger.Info("received done")
 			cancelFunc()
+			close(s.rpcChan)
 			break errorLoop
 		}
 	}

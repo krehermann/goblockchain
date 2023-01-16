@@ -3,6 +3,7 @@ package network
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -22,8 +23,13 @@ func TestNetwork(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	n := newNetwork(t, ctx)
 
-	v := generateValidator(t, n.observedLogger, "validator")
-	nonValidators := generateNonValidators(t, n.observedLogger, []string{"r0", "r1", "r2"}...)
+	l, err := zap.NewDevelopment()
+	assert.NoError(t, err)
+	// hack
+	zap.ReplaceGlobals(l)
+	//	l = n.observedLogger
+	v := generateValidator(t, l, "validator")
+	nonValidators := generateNonValidators(t, l, []string{"r0", "r1", "r2"}...)
 
 	n.register(v)
 	n.register(nonValidators...)
@@ -40,11 +46,9 @@ func TestNetwork(t *testing.T) {
 
 	go n.startServers()
 
-	runFor(8*time.Second, cancelFunc)
-	for i, l := range n.observedLogs.All() {
-		t.Logf("msg %d: %v, %s  %s %v", i, l.Caller, l.LoggerName, l.Message, l.ContextMap())
-	}
-	//assert.Fail(t, "hack to see logs")
+	runFor(13*time.Second, cancelFunc)
+	// let network come to steady state
+	time.Sleep(5 * time.Second)
 
 	hdrMap := make(map[string]*core.Header)
 	for id, server := range n.Servers {
@@ -58,7 +62,13 @@ func TestNetwork(t *testing.T) {
 			if id == otherId {
 				continue
 			}
-			assert.EqualValues(t, hdr, otherHdr, "headers mismatch for %s, %s", id, otherId)
+			assert.Equal(t, hdr.Height, otherHdr.Height, "height mismatch between %s:%d != %s:%d",
+				id, hdr.Height,
+				otherId, otherHdr.Height)
+			assert.True(t, reflect.DeepEqual(hdr, otherHdr),
+				"err comparing headers %s %+v: %s %+v",
+				id, hdr,
+				otherId, otherHdr)
 		}
 	}
 
@@ -70,6 +80,10 @@ func runFor(d time.Duration, cancel context.CancelFunc) {
 }
 
 func (n *network) addPeer(from, to *Server) {
+	zap.L().Info("networking adding peer",
+		zap.String("from", from.ID),
+		zap.String("to", to.ID),
+	)
 	fromTransport := from.Transports[0]
 	require.NotEmpty(n.t, fromTransport)
 
@@ -129,13 +143,13 @@ func (n *network) setTopology(t *topology) {
 
 func (n *network) initializeConnections() {
 	require.NotNil(n.t, n.toplgy, "network has no toplogy")
-	require.NotNil(n.t, n.toplgy, "network has no servers")
+	require.NotNil(n.t, n.Servers, "network has no servers")
 
 	for fromId, peerIds := range n.toplgy.connections {
 		fromServer, exists := n.Servers[fromId]
 		require.True(n.t, exists, "server id %s in topology but not in network", fromId)
 		for _, peerId := range peerIds {
-			peerServer, exists := n.Servers[fromId]
+			peerServer, exists := n.Servers[peerId]
 			require.True(n.t, exists, "server id %s in topology but not in network", peerId)
 
 			n.addPeer(fromServer, peerServer)
@@ -161,7 +175,7 @@ func (n *network) register(servers ...*Server) {
 	for _, s := range servers {
 		require.NotEmpty(n.t, s.ID)
 		// override the logger
-		s.SetLogger(n.observedLogger)
+		//		s.SetLogger(n.observedLogger)
 		n.Servers[s.ID] = s
 	}
 }

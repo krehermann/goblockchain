@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/krehermann/goblockchain/core"
@@ -41,12 +42,12 @@ func main() {
 	fatalIfErr(cancelFunc, peer0.Connect(peer1))
 	fatalIfErr(cancelFunc, peer1.Connect(peer2))
 
-	initRemoteServers(ctx, peer0, peer1, peer2)
+	remotes := initRemoteServers(ctx, peer0, peer1, peer2)
 
 	go func() {
 		cnt := 0
 		for {
-			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
+			//			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
 			time.Sleep(1 * time.Second)
 			cnt += 1
 		}
@@ -55,25 +56,51 @@ func main() {
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
 	go localServer.Start(ctx)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(8 * time.Second)
 	cancelFunc()
 	time.Sleep(2 * time.Second)
+
+	lhdr, err := localServer.Blockchain.GetHeader(localServer.Blockchain.Height())
+	if err != nil {
+		zap.L().Sugar().Fatalf("err getting local header %s", err)
+	}
+	for _, remote := range remotes {
+		if localServer.Blockchain.Height() != remote.Blockchain.Height() {
+			zap.L().Sugar().Errorf(
+				"local height (%d) != remote height[%s](%d)",
+				localServer.Blockchain.Height(),
+				remote.ID,
+				remote.Blockchain.Height(),
+			)
+			rhdr, err := remote.Blockchain.GetHeader(remote.Blockchain.Height())
+			if err != nil {
+				zap.L().Sugar().Fatalf("err getting remote header %s %s", remote.ID, err)
+			}
+			if !reflect.DeepEqual(lhdr, rhdr) {
+				zap.L().Error("err comparing header",
+					zap.Any("local", lhdr),
+					zap.Any(remote.ID, rhdr))
+			} else {
+				zap.L().Sugar().Infof("local = %s", remote.ID)
+			}
+		}
+	}
 }
 
-func initRemoteServers(ctx context.Context, trs ...network.Transport) {
+func initRemoteServers(ctx context.Context, trs ...network.Transport) []*network.Server {
 	zap.L().Info("initRemoteServers")
-
+	out := make([]*network.Server, 0)
 	ctx, cancelFunc := context.WithCancel(ctx)
 	for i, tr := range trs {
 		s := mustMakeServer(makeNonValidatorOpts(
 			fmt.Sprintf("remote-%d", i), tr))
-
+		out = append(out, s)
 		go func() {
 			err := s.Start(ctx)
 			fatalIfErr(cancelFunc, err)
 		}()
 	}
-
+	return out
 }
 
 func mustMakeServer(opts network.ServerOpts) *network.Server {

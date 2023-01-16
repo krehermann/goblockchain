@@ -137,6 +137,7 @@ func (bc *Blockchain) persistBlock(b *Block) error {
 	bc.headerMu.Unlock()
 
 	bc.logger.Info("added block to chain",
+		zap.Int("height", int(bc.Height())),
 		zap.String("hash", b.Hash(DefaultBlockHasher{}).String()),
 		zap.Any("tx len", len(b.Transactions)),
 	)
