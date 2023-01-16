@@ -18,6 +18,8 @@ var (
 	defaultBlockTime = 5 * time.Second
 )
 
+type Peers struct {
+}
 type ServerOpts struct {
 	ID string
 	// multiple transport layers
@@ -89,6 +91,10 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		s.RPCProcessor = s
 	}
 	return s, nil
+}
+
+func (s *Server) SetLogger(l *zap.Logger) {
+	s.logger = l.Named(s.ID)
 }
 
 // implement RPCProcessor interface
