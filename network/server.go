@@ -141,8 +141,16 @@ func (s *Server) handleStatusMessageRequest(smsg *StatusMessageRequest) error {
 	)
 
 	// send my status to the requestor
+	cur, err := s.currentStatus()
+	if err != nil {
+		return err
+	}
+	msg, err := newMessageFromStatusMessageResponse(cur)
+	if err != nil {
+		return err
+	}
 
-	return nil
+	return s.broadcast(msg)
 }
 
 func (s *Server) handleBlock(b *core.Block) error {
