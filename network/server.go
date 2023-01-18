@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"math/rand"
+	"sync"
 
 	"fmt"
 	"strconv"
@@ -180,13 +181,26 @@ func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("starting server",
 		zap.String("id", s.ID),
 	)
-	ctx, cancelFunc := context.WithCancel(ctx)
-	defer cancelFunc()
-
+	/*
+		ctx, cancelFunc := context.WithCancel(ctx)
+		defer cancelFunc()
+	*/
+	wg := sync.WaitGroup{}
 	s.initTransports()
-	go s.handleRpcs(ctx)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.handleRpcs(ctx)
+		s.logger.Sugar().Info("done handling rpcs")
+	}()
 	if s.isValidator {
-		go s.handleValidtion(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.handleValidtion(ctx)
+			s.logger.Sugar().Info("done handling validation")
+		}()
 	}
 
 	err := s.sendStartupStatusRequests()
@@ -203,12 +217,18 @@ errorLoop:
 			}
 		case <-ctx.Done():
 			s.logger.Info("received done")
-			cancelFunc()
-			close(s.rpcChan)
+
 			break errorLoop
 		}
 	}
 
+	s.logger.Sugar().Info("waiting for shutdown of goroutines")
+	wg.Wait()
+	s.logger.Sugar().Info("shutdown. closing channels")
+	close(s.rpcChan)
+	s.rpcChan = nil
+	close(s.errChan)
+	s.errChan = nil
 	return nil
 }
 
@@ -253,8 +273,10 @@ validationLoop:
 		// prevent busy loop
 		case <-blockTicker.C:
 			// need to call consensus logic here
-			s.errChan <- s.createNewBlock()
-
+			err := s.createNewBlock()
+			if err != nil {
+				s.errChan <- err
+			}
 		case <-ctx.Done():
 			s.logger.Info("handleValidation recieved done")
 			break validationLoop
@@ -404,6 +426,13 @@ func (s *Server) initTransports() {
 				// we would like to keep it simple and flexible
 				// to that end, we simply forward to a channel
 				// owned by the server
+
+				//hack to handle shutdown. need to think about the right way
+				// to do this
+				if s.rpcChan == nil {
+					s.logger.Warn("rpc channel closed. aborting.")
+					break
+				}
 				s.rpcChan <- rpc
 			}
 		}(tr)

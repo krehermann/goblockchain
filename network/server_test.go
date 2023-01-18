@@ -3,8 +3,10 @@ package network
 import (
 	"bytes"
 	"context"
+	"math"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,7 +14,6 @@ import (
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,13 +22,20 @@ import (
 func TestNetwork(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancelFunc := context.WithCancel(ctx)
-	n := newNetwork(t, ctx)
+
+	blockTime := 100 * time.Millisecond
 
 	l, err := zap.NewDevelopment()
 	assert.NoError(t, err)
+	/*
+		observedZapCore, observedLogs := observer.New(zap.DebugLevel)
+		observedLogger := zap.New(observedZapCore).Named("test")
+	*/
 	// hack
 	zap.ReplaceGlobals(l)
-	//	l = n.observedLogger
+
+	n := newNetwork(t, ctx, blockTime, l)
+
 	v := generateValidator(t, l, "validator")
 	nonValidators := generateNonValidators(t, l, []string{"r0", "r1", "r2"}...)
 
@@ -44,39 +52,51 @@ func TestNetwork(t *testing.T) {
 	n.setTopology(toplgy)
 	n.initializeConnections()
 
-	go n.startServers()
+	n.startServers()
 
-	runFor(13*time.Second, cancelFunc)
-	// let network come to steady state
-	time.Sleep(5 * time.Second)
+	n.runFor(5, cancelFunc)
 
-	hdrMap := make(map[string]*core.Header)
-	for id, server := range n.Servers {
-		hdr, err := server.chain.GetHeader(server.chain.Height())
-		assert.NoError(t, err)
-		hdrMap[id] = hdr
+	servers := make([]*Server, 0)
+	for _, server := range n.Servers {
+		servers = append(servers, server)
 	}
+	sort.Slice(servers, func(i, j int) bool {
+		return servers[i].ID < servers[j].ID
+	})
 
-	for id, hdr := range hdrMap {
-		for otherId, otherHdr := range hdrMap {
-			if id == otherId {
-				continue
-			}
-			assert.Equal(t, hdr.Height, otherHdr.Height, "height mismatch between %s:%d != %s:%d",
-				id, hdr.Height,
-				otherId, otherHdr.Height)
-			assert.True(t, reflect.DeepEqual(hdr, otherHdr),
+	for i := 0; i < len(servers); i++ {
+		serverI := servers[i]
+		hgtI := serverI.chain.Height()
+		for j := i + 1; j < len(servers); j++ {
+			serverJ := servers[j]
+			hgtJ := serverJ.chain.Height()
+			assert.InDelta(t, hgtI, hgtJ, 1)
+			common := int(math.Min(float64(hgtI), float64(hgtJ)))
+			hdrI, err := serverI.chain.GetHeader(uint32(common))
+			assert.NoError(t, err)
+			hdrJ, err := serverJ.chain.GetHeader(uint32(common))
+			assert.NoError(t, err)
+			assert.True(t, reflect.DeepEqual(hdrI, hdrJ),
 				"err comparing headers %s %+v: %s %+v",
-				id, hdr,
-				otherId, otherHdr)
+				serverI.ID, hdrI,
+				serverJ.ID, hgtJ)
 		}
 	}
-
 }
 
-func runFor(d time.Duration, cancel context.CancelFunc) {
+func (n *network) runFor(nBlocks int, cancel context.CancelFunc) {
+	x := 1.5 * float64(nBlocks)
+	sec := n.blockTime.Seconds()
+	sleepMill := int64(x*sec) * 1000
+	d := time.Duration(sleepMill) * time.Millisecond
+	zap.L().Sugar().Infof("running network for %d seconds", d.Seconds())
+
 	time.Sleep(d)
+	zap.L().Sugar().Info("TEST CALLING CANCEL")
 	cancel()
+	zap.L().Sugar().Info("Waiting for server shutdown")
+	n.wg.Wait()
+	zap.L().Sugar().Info("NETWORK SHUTDOWN")
 }
 
 func (n *network) addPeer(from, to *Server) {
@@ -111,27 +131,28 @@ func (t *topology) connect(from, to string) {
 }
 
 type network struct {
-	t              *testing.T
-	Servers        map[string]*Server
-	ctx            context.Context
-	observedLogs   *observer.ObservedLogs
-	observedLogger *zap.Logger
-	toplgy         *topology
-	// cancelFunc?
+	t         *testing.T
+	Servers   map[string]*Server
+	ctx       context.Context
+	logger    *zap.Logger
+	toplgy    *topology
+	blockTime time.Duration
+	wg        sync.WaitGroup
 }
 
-func newNetwork(t *testing.T, ctx context.Context, servers ...*Server) *network {
+func newNetwork(t *testing.T,
+	ctx context.Context,
+	blockTime time.Duration,
+	logger *zap.Logger,
+	servers ...*Server) *network {
 
-	observedZapCore, observedLogs := observer.New(zap.DebugLevel)
-	observedLogger := zap.New(observedZapCore).Named("network")
-
-	// override the logger
 	n := &network{
-		t:              t,
-		ctx:            context.Background(),
-		observedLogs:   observedLogs,
-		observedLogger: observedLogger,
-		Servers:        make(map[string]*Server),
+		t:         t,
+		ctx:       ctx,
+		logger:    logger.Named("network"),
+		Servers:   make(map[string]*Server),
+		blockTime: blockTime,
+		wg:        sync.WaitGroup{},
 	}
 	n.register(servers...)
 	return n
@@ -158,11 +179,14 @@ func (n *network) initializeConnections() {
 }
 
 func (n *network) startServers() {
+
 	for id, server := range n.Servers {
 		n.t.Logf("test network starting %s", id)
+		n.wg.Add(1)
 		go func(s *Server) {
-
+			defer n.wg.Done()
 			err := s.Start(n.ctx)
+			n.logger.Sugar().Infof("server %s shutdown", s.ID)
 			require.NoError(n.t, err)
 
 		}(server)
@@ -170,11 +194,12 @@ func (n *network) startServers() {
 }
 
 func (n *network) register(servers ...*Server) {
-	n.observedLogger.Sugar().Debugf("network register %d", len(servers))
+	n.logger.Sugar().Debugf("network register %d", len(servers))
 
 	for _, s := range servers {
 		require.NotEmpty(n.t, s.ID)
-		// override the logger
+		// override the blockTime
+		s.blockTime = n.blockTime
 		//		s.SetLogger(n.observedLogger)
 		n.Servers[s.ID] = s
 	}
@@ -206,24 +231,6 @@ func generateNonValidators(t *testing.T, l *zap.Logger, ids ...string) []*Server
 	}
 	return out
 }
-
-/*
-func initRemoteServers(ctx context.Context, trs ...Transport) {
-	zap.L().Info("initRemoteServers")
-
-	ctx, cancelFunc := context.WithCancel(ctx)
-	for i, tr := range trs {
-		s := mustMakeServer(makeNonValidatorOpts(
-			fmt.Sprintf("remote-%d", i), tr))
-
-		go func() {
-			err := s.Start(ctx)
-			fatalIfErr(cancelFunc, err)
-		}()
-	}
-
-}
-*/
 func mustMakeServer(t *testing.T, opts ServerOpts) *Server {
 	s, err := NewServer(opts)
 	require.NoError(t, err)
@@ -251,11 +258,6 @@ func makeNonValidatorOpts(id string, tr Transport) ServerOpts {
 func sendRandomTransaction(from, to Transport) error {
 	privKey := crypto.MustGeneratePrivateKey()
 
-	/*
-		data := []byte(strconv.FormatInt(rand.Int63(), 10))
-
-		tx := core.NewTransaction(data)
-	*/
 	tx := transactionAdder()
 	err := tx.Sign(privKey)
 	if err != nil {
