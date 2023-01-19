@@ -27,6 +27,14 @@ func NewLocalTransport(addr NetAddr) *LocalTransport {
 	}
 }
 
+func (lt *LocalTransport) Get(addr NetAddr) (Transport, bool) {
+	lt.logger.Info("Get",
+		zap.Any("want", addr),
+		zap.Any("have", lt.peers))
+	peer, exists := lt.peers[addr]
+	return peer, exists
+}
+
 func (lt *LocalTransport) Consume() <-chan RPC {
 	return lt.consumeCh
 }
@@ -46,11 +54,18 @@ func (lt *LocalTransport) Broadcast(payload Payload) error {
 
 // setup up bidirecional connection between transports
 func (lt *LocalTransport) Connect(tr Transport) error {
-
 	localTr, ok := tr.(*LocalTransport)
 	if !ok {
 		return fmt.Errorf("local transport can only connect to another local transport. got %v", tr)
 	}
+
+	lt.logger.Info("connect",
+		zap.Any("me", lt.Addr()),
+		zap.Any("i have", lt.peers),
+
+		zap.Any("other", localTr.Addr()),
+		zap.Any("other has", localTr.peers),
+	)
 
 	skip := func() bool {
 		lt.m.RLock()
@@ -59,6 +74,8 @@ func (lt *LocalTransport) Connect(tr Transport) error {
 		return exists
 	}
 	if skip() {
+		lt.logger.Named("localtransport").Info("skipping existing connection")
+
 		return nil
 	}
 	lt.m.Lock()

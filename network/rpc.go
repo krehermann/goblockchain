@@ -90,6 +90,27 @@ func ExtractMessageFromRPC(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
+	case MessageTypeSubscribeRequest:
+		sMsg := new(SubscribeMessageRequest)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode subscribe request message from %s: %w", rpc.From, err)
+		}
+
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
+	case MessageTypeSubscribeResponse:
+		sMsg := new(SubscribeMessageResponse)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode subscribe response message from %s: %w", rpc.From, err)
+		}
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
 	default:
 		return &out, fmt.Errorf("invalid message type %s", msg.Header)
 

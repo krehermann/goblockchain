@@ -52,7 +52,7 @@ func main() {
 	go localServer.Start(ctx)
 	err = remotes[0].Connect(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
-	err = remotes[0].Join(localServer)
+	err = remotes[0].Subscribe(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 
 	time.Sleep(8 * time.Second)

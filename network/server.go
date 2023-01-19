@@ -99,14 +99,22 @@ func (s *Server) SetLogger(l *zap.Logger) {
 	s.logger = l.Named(s.ID)
 }
 
+func (s *Server) receive() {
+	for rpc := range s.Transport.Consume() {
+		s.rpcChan <- rpc
+	}
+}
+
 func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("starting server",
 		zap.String("id", s.ID),
 	)
 
-	s.Connect(s.PeerTransports...)
+	//s.Connect(s.PeerTransports...)
 	wg := sync.WaitGroup{}
 	//	s.initTransports()
+	// TODO: how to shut this down?
+	go s.receive()
 
 	wg.Add(1)
 	go func() {
@@ -181,6 +189,18 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 			zap.String("from", string(dmsg.From)))
 		return s.handleStatusMessageResponse(t)
 
+	case *SubscribeMessageRequest:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeSubscribeRequest.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleSubscribeMessageRequest(t)
+
+	case *SubscribeMessageResponse:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeSubscribeResponse.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleSubscribeMessageResponse(t)
+
 	default:
 		s.logger.Info("ProcessMessage",
 			zap.Any("type", t),
@@ -236,17 +256,20 @@ func (s *Server) Join(peer *Server) error {
 func (s *Server) Subscribe(leader Transport) error {
 	s.logger.Info("subscribe",
 		zap.String("to", string(leader.Addr())),
-		zap.String("subscriber", s.ID),
+		zap.String("subscriber", string(s.Transport.Addr())),
 	)
 
-	s.PeerTransports = append(s.PeerTransports, leader)
+	//s.PeerTransports = append(s.PeerTransports, leader)
 
+	// hacky. need to setup up an rpc consume from the leader
+	// so that response can be handled
+	// how shut this down?
 	// TODO server consumer wait group
-	go func(tr Transport) {
-		s.logger.Debug("initializing consumer for peer",
-			zap.String("peer address", string(tr.Addr())),
+	go func() {
+		s.logger.Debug("initializing subscription channel from leader",
+			zap.String("leader address", string(leader.Addr())),
 		)
-		for rpc := range tr.Consume() {
+		for rpc := range leader.Consume() {
 			// we need to do something with the messages
 			// we would like to keep it simple and flexible
 			// to that end, we simply forward to a channel
@@ -260,9 +283,20 @@ func (s *Server) Subscribe(leader Transport) error {
 			}
 			s.rpcChan <- rpc
 		}
-	}(leader)
+	}()
 
-	return nil
+	req := &SubscribeMessageRequest{
+		RequestorID:   s.ID,
+		RequestorAddr: s.Transport.Addr(),
+	}
+
+	msg, err := newMessageFromSubscribeMessageRequest(req)
+	if err != nil {
+		return err
+	}
+
+	return s.send(leader.Addr(), msg)
+
 }
 
 /*

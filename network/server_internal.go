@@ -144,6 +144,17 @@ func (s *Server) broadcast(msg *Message) error {
 	return nil
 }
 
+func (s *Server) send(addr NetAddr, msg *Message) error {
+	data, err := msg.Bytes()
+	if err != nil {
+		return err
+	}
+	if data == nil {
+		panic("nil payload")
+	}
+	return s.Transport.Send(addr, CreatePayload(data))
+}
+
 func (s *Server) broadcastBlock(b *core.Block) error {
 	s.logger.Info("broadcast block",
 		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
