@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -128,16 +129,9 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcast(msg *Message) error {
-	data, err := msg.Bytes()
-	if err != nil {
-		return err
-	}
-	if data == nil {
-		panic("nil payload")
-	}
-
-	for _, trans := range s.PeerTransports {
-		if err := trans.Broadcast(CreatePayload(data)); err != nil {
+	for _, peer := range s.PeerTransports {
+		err := s.send(peer.Addr(), msg)
+		if err != nil {
 			return err
 		}
 	}
@@ -237,7 +231,18 @@ func (s *Server) handleBlock(b *core.Block) error {
 	)
 	err := s.chain.AddBlock(b)
 	if err != nil {
-		return err
+		s.logger.Error("what kind of error is this",
+			zap.Error(err))
+		syncErr := new(core.ErrOutOfSync)
+		if errors.As(err, &syncErr) {
+			s.logger.Error("got out of sync error", zap.Error(err))
+			if syncErr.Lag > 3 {
+				// self heal
+				s.requestBlocks(sync.Lag)
+			}
+		} else {
+			return err
+		}
 	}
 	go func() {
 		err := s.broadcastBlock(b)
@@ -245,5 +250,9 @@ func (s *Server) handleBlock(b *core.Block) error {
 			s.errChan <- err
 		}
 	}()
+	return nil
+}
+
+func (s *Server) requestBlocks(n int) error {
 	return nil
 }

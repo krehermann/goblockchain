@@ -199,8 +199,8 @@ func (n *network) initServer(s *Server, seeds ...*Server) {
 	for _, seed := range seeds {
 		n.logger.Sugar().Info("seeding %s from %s", s.ID, seed.ID)
 
-		require.NoError(n.t,
-			s.Connect(seed.Transport))
+		require.NoError(n.t, s.Connect(seed.Transport))
+		require.NoError(n.t, s.Subscribe(seed.Transport))
 	}
 
 	n.t.Logf("test network starting %s", s.ID)
