@@ -22,16 +22,17 @@ var (
 type Peers struct {
 }
 type ServerOpts struct {
-	ID string
+	ID        string
+	Transport Transport
 	// multiple transport layers
-	Transports    []Transport
-	PrivateKey    crypto.PrivateKey
-	BlockTime     time.Duration
-	TxHasher      core.Hasher[*core.Transaction]
-	Logger        *zap.Logger
-	RPCDecodeFunc RPCDecodeFunc
-	RPCProcessor  RPCProcessor
-	Blockchain    *core.Blockchain
+	PeerTransports []Transport
+	PrivateKey     crypto.PrivateKey
+	BlockTime      time.Duration
+	TxHasher       core.Hasher[*core.Transaction]
+	Logger         *zap.Logger
+	RPCDecodeFunc  RPCDecodeFunc
+	RPCProcessor   RPCProcessor
+	Blockchain     *core.Blockchain
 }
 
 type Server struct {
@@ -98,6 +99,60 @@ func (s *Server) SetLogger(l *zap.Logger) {
 	s.logger = l.Named(s.ID)
 }
 
+func (s *Server) Start(ctx context.Context) error {
+	s.logger.Info("starting server",
+		zap.String("id", s.ID),
+	)
+
+	wg := sync.WaitGroup{}
+	s.initTransports()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.runRPCProcessor(ctx)
+		s.logger.Sugar().Info("done handling rpcs")
+	}()
+	if s.isValidator {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.runValidator(ctx)
+			s.logger.Sugar().Info("done handling validation")
+		}()
+	}
+
+	err := s.sendStartupStatusRequests()
+	if err != nil {
+		return err
+	}
+
+errorLoop:
+	for {
+		select {
+		case err := <-s.errChan:
+			if err != nil {
+				s.logger.Error(err.Error())
+			}
+		case <-ctx.Done():
+			s.logger.Info("received done")
+
+			break errorLoop
+		}
+	}
+
+	s.logger.Sugar().Info("waiting for shutdown of goroutines")
+	wg.Wait()
+	s.logger.Sugar().Info("shutdown. closing channels")
+	/*
+		close(s.rpcChan)
+		s.rpcChan = nil
+		close(s.errChan)
+		s.errChan = nil
+	*/
+	return nil
+}
+
 // implement RPCProcessor interface
 func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 	switch t := dmsg.Data.(type) {
@@ -134,293 +189,14 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 	}
 }
 
-func (s *Server) handleStatusMessageResponse(smsg *StatusMessageResponse) error {
-	s.logger.Info("handleStatusMessageResponse",
-		zap.Any("status", smsg),
-	)
-
-	return nil
-}
-
-func (s *Server) handleStatusMessageRequest(smsg *StatusMessageRequest) error {
-	s.logger.Info("handleStatusMessageRequest",
-		zap.Any("status", smsg),
-	)
-
-	// send my status to the requestor
-	cur, err := s.currentStatus()
-	if err != nil {
-		return err
-	}
-	msg, err := newMessageFromStatusMessageResponse(cur)
-	if err != nil {
-		return err
-	}
-
-	return s.broadcast(msg)
-}
-
-func (s *Server) handleBlock(b *core.Block) error {
-	s.logger.Info("handleBlock",
-		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
-	)
-	err := s.chain.AddBlock(b)
-	if err != nil {
-		return err
-	}
-	go func() {
-		err := s.broadcastBlock(b)
-		if err != nil {
-			s.errChan <- err
-		}
-	}()
-	return nil
-}
-
-func (s *Server) Start(ctx context.Context) error {
-	s.logger.Info("starting server",
-		zap.String("id", s.ID),
-	)
-	/*
-		ctx, cancelFunc := context.WithCancel(ctx)
-		defer cancelFunc()
-	*/
-	wg := sync.WaitGroup{}
-	s.initTransports()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		s.handleRpcs(ctx)
-		s.logger.Sugar().Info("done handling rpcs")
-	}()
-	if s.isValidator {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.handleValidtion(ctx)
-			s.logger.Sugar().Info("done handling validation")
-		}()
-	}
-
-	err := s.sendStartupStatusRequests()
-	if err != nil {
-		return err
-	}
-
-errorLoop:
-	for {
-		select {
-		case err := <-s.errChan:
-			if err != nil {
-				s.logger.Error(err.Error())
-			}
-		case <-ctx.Done():
-			s.logger.Info("received done")
-
-			break errorLoop
-		}
-	}
-
-	s.logger.Sugar().Info("waiting for shutdown of goroutines")
-	wg.Wait()
-	s.logger.Sugar().Info("shutdown. closing channels")
-	close(s.rpcChan)
-	s.rpcChan = nil
-	close(s.errChan)
-	s.errChan = nil
-	return nil
-}
-
-func (s *Server) currentStatus() (*StatusMessageResponse, error) {
-	status := new(StatusMessageResponse)
-
-	hght := s.chain.Height()
-	ver := uint32(0)
-	header, err := s.chain.GetHeader(hght)
-	if err == nil {
-		ver = header.Version
-	}
-	status.CurrentHeight = hght
-	status.Version = ver
-	status.ServerID = s.ID
-	return status, nil
-}
-
-func (s *Server) sendStartupStatusRequests() error {
-	req := new(StatusMessageRequest)
-	req.RequestorID = s.ID
-	s.logger.Debug("sending startup status",
-		zap.Any("msg", req),
-	)
-
-	msg, err := newMessageFromStatusMessageRequest(req)
-	if err != nil {
-		return err
-	}
-	s.broadcast(msg)
-	return nil
-}
-
-func (s *Server) handleValidtion(ctx context.Context) {
-	blockTicker := time.NewTicker(s.blockTime)
-	s.logger.Info("starting validator loop", zap.String("block time", s.blockTime.String()))
-
-validationLoop:
-	for {
-
-		select {
-		// prevent busy loop
-		case <-blockTicker.C:
-			// need to call consensus logic here
-			err := s.createNewBlock()
-			if err != nil {
-				s.errChan <- err
-			}
-		case <-ctx.Done():
-			s.logger.Info("handleValidation recieved done")
-			break validationLoop
-
-		}
-	}
-}
-
-func (s *Server) handleRpcs(ctx context.Context) {
-	s.logger.Info("starting rpc handler loop")
-loop:
-	for {
-		select {
-		case rpc := <-s.rpcChan:
-			decodedMsg, err := s.ServerOpts.RPCDecodeFunc(rpc)
-			if err != nil {
-				s.errChan <- fmt.Errorf("server failed to decode rpc: %w", err)
-				continue
-			}
-			err = s.ProcessMessage(decodedMsg)
-			if err != nil {
-				s.errChan <- fmt.Errorf("handle rpc: failed to process decoded message: %w", err)
-			}
-		case <-s.quitChan:
-			s.logger.Info("handleRpcs received quit signal")
-			break loop
-		case <-ctx.Done():
-			s.logger.Info("handleRpcs: received done")
-			break loop
-		}
-	}
-
-}
-
-func (s *Server) handleTransaction(tx *core.Transaction) error {
-	// 2 ways for txn to come in
-	// 1. client, like a wallet creates a txn & sends the server,
-	// server puts it into the mempool
-	// 2. server broadcasts txn to connected nodes. this is really second
-	// part of the first
-	err := tx.Verify()
-	if err != nil {
-		return err
-	}
-	tx.SetCreatedAt(time.Now().UTC())
-
-	isNewTx, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
-	if err != nil {
-		return err
-	}
-
-	if isNewTx {
-		go func() {
-			err := s.broadcastTx(tx)
-			if err != nil {
-				s.errChan <- err
-			}
-		}()
-	}
-	return err
-}
-
-func (s *Server) broadcastTx(tx *core.Transaction) error {
-	s.logger.Debug("broadcastTx",
-		zap.Any("hash", tx.Hash(&core.DefaultTxHasher{}).Prefix()))
-
-	msg, err := newMessageFromTransaction(tx)
-	if err != nil {
-		return err
-	}
-	return s.broadcast(msg)
-}
-
-func (s *Server) broadcast(msg *Message) error {
-	data, err := msg.Bytes()
-	if err != nil {
-		return err
-	}
-	if data == nil {
-		panic("nil payload")
-	}
-
-	for _, trans := range s.Transports {
-		if err := trans.Broadcast(CreatePayload(data)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Server) broadcastBlock(b *core.Block) error {
-	s.logger.Info("broadcast block",
-		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
-	)
-	msg, err := newMessageFromBlock(b)
-	if err != nil {
-		return err
-	}
-	return s.broadcast(msg)
-
-}
-
-func (s *Server) createNewBlock() error {
-	s.logger.Info("creating block")
-
-	currHeader, err := s.chain.GetHeader(s.chain.Height())
-	if err != nil {
-		return err
-	}
-
-	// TODO: add logic to determine how many txns can be in a block
-	txns := s.mempool.Pending()
-
-	block, err := core.NewBlockFromPrevHeader(currHeader, txns)
-	if err != nil {
-		return err
-	}
-
-	err = block.Sign(s.PrivateKey)
-	if err != nil {
-		return err
-	}
-
-	err = s.chain.AddBlock(block)
-	if err != nil {
-		return err
-	}
-	go func() {
-		err := s.broadcastBlock(block)
-		if err != nil {
-			s.errChan <- err
-		}
-	}()
-	// remember to clear our mempool after adding a block
-	// would like to make this cleaner
-	s.mempool.ClearPending()
-
-	return nil
-}
-
+// func (s *Server) Add
 func (s *Server) initTransports() {
 	// make each transport listen for messages
-	for _, tr := range s.Transports {
+	for _, tr := range s.PeerTransports {
 		go func(tr Transport) {
+			s.logger.Debug("initializing consumer for peer",
+				zap.String("peer address", string(tr.Addr())),
+			)
 			for rpc := range tr.Consume() {
 				// we need to do something with the messages
 				// we would like to keep it simple and flexible
