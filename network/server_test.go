@@ -37,7 +37,7 @@ func TestNetwork(t *testing.T) {
 	n := newNetwork(t, ctx, blockTime, l)
 
 	v := generateValidator(t, l, "validator")
-	nonValidators := generateNonValidators(t, l, []string{"r0", "r1", "r2"}...)
+	nonValidators := generateNonValidators(t, l, []string{"r0"}...)
 
 	n.register(v)
 	n.register(nonValidators...)
@@ -46,8 +46,9 @@ func TestNetwork(t *testing.T) {
 
 	toplgy.connect(v.ID, nonValidators[0].ID)
 	toplgy.connect(nonValidators[0].ID, v.ID)
-	toplgy.connect(nonValidators[0].ID, nonValidators[1].ID)
-	toplgy.connect(nonValidators[1].ID, nonValidators[2].ID)
+
+	//toplgy.connect(nonValidators[0].ID, nonValidators[1].ID)
+	//toplgy.connect(nonValidators[1].ID, nonValidators[2].ID)
 
 	n.setTopology(toplgy)
 	//n.connectAll()
@@ -117,14 +118,7 @@ func (n *network) addPeer(from, to *Server) {
 		zap.String("from", from.ID),
 		zap.String("to", to.ID),
 	)
-	fromTransport := from.PeerTransports[0]
-	require.NotEmpty(n.t, fromTransport)
 
-	toTransport := to.PeerTransports[0]
-	require.NotEmpty(n.t, toTransport)
-
-	require.NoError(n.t,
-		fromTransport.Connect(toTransport))
 }
 
 type topology struct {
@@ -192,7 +186,10 @@ func (n *network) initializeConnections(s *Server) {
 	for _, peerId := range peerIds {
 		peerServer, exists := n.Servers[peerId]
 		require.True(n.t, exists, "server id %s in topology but not in network", peerId)
-		n.addPeer(fromServer, peerServer)
+
+		require.NoError(n.t,
+			fromServer.Connect(peerServer.Transport))
+
 	}
 }
 
@@ -201,7 +198,9 @@ func (n *network) initServer(s *Server, seeds ...*Server) {
 	// seed is the incoming connection to the given server
 	for _, seed := range seeds {
 		n.logger.Sugar().Info("seeding %s from %s", s.ID, seed.ID)
-		n.addPeer(seed, s)
+
+		require.NoError(n.t,
+			s.Connect(seed.Transport))
 	}
 
 	n.t.Logf("test network starting %s", s.ID)
@@ -269,16 +268,18 @@ func mustMakeServer(t *testing.T, opts ServerOpts) *Server {
 func makeValidatorOpts(id string, tr Transport) ServerOpts {
 	privKey := crypto.MustGeneratePrivateKey()
 	return ServerOpts{
-		PrivateKey:     privKey,
-		ID:             id,
-		PeerTransports: []Transport{tr},
+		PrivateKey: privKey,
+		ID:         id,
+		Transport:  tr,
+		//PeerTransports: []Transport{tr},
 	}
 }
 
 func makeNonValidatorOpts(id string, tr Transport) ServerOpts {
 	return ServerOpts{
-		ID:             id,
-		PeerTransports: []Transport{tr},
+		ID:        id,
+		Transport: tr,
+		//PeerTransports: []Transport{tr},
 	}
 }
 

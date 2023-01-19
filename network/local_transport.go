@@ -44,9 +44,7 @@ func (lt *LocalTransport) Broadcast(payload Payload) error {
 	return nil
 }
 
-// local transport can only connect to another local transport
-// which is pretty obvious from the name. In this case,
-// connect simply adds the input to the peer list
+// setup up bidirecional connection between transports
 func (lt *LocalTransport) Connect(tr Transport) error {
 
 	localTr, ok := tr.(*LocalTransport)
@@ -54,17 +52,21 @@ func (lt *LocalTransport) Connect(tr Transport) error {
 		return fmt.Errorf("local transport can only connect to another local transport. got %v", tr)
 	}
 
-	setupErr := func() error {
-		lt.m.Lock()
-		defer lt.m.Unlock()
-
-		lt.peers[tr.Addr()] = localTr
-		return nil
-	}()
-	if setupErr != nil {
-		return setupErr
+	skip := func() bool {
+		lt.m.RLock()
+		defer lt.m.RUnlock()
+		_, exists := lt.peers[tr.Addr()]
+		return exists
 	}
-	return nil
+	if skip() {
+		return nil
+	}
+	lt.m.Lock()
+	lt.peers[tr.Addr()] = localTr
+	lt.m.Unlock()
+
+	return tr.Connect(lt)
+
 }
 
 func (lt *LocalTransport) Addr() NetAddr {

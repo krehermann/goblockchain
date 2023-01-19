@@ -104,8 +104,9 @@ func (s *Server) Start(ctx context.Context) error {
 		zap.String("id", s.ID),
 	)
 
+	s.Connect(s.PeerTransports...)
 	wg := sync.WaitGroup{}
-	s.initTransports()
+	//	s.initTransports()
 
 	wg.Add(1)
 	go func() {
@@ -189,33 +190,110 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 	}
 }
 
-// func (s *Server) Add
-func (s *Server) initTransports() {
-	// make each transport listen for messages
-	for _, tr := range s.PeerTransports {
-		go func(tr Transport) {
-			s.logger.Debug("initializing consumer for peer",
-				zap.String("peer address", string(tr.Addr())),
-			)
-			for rpc := range tr.Consume() {
-				// we need to do something with the messages
-				// we would like to keep it simple and flexible
-				// to that end, we simply forward to a channel
-				// owned by the server
-
-				//hack to handle shutdown. need to think about the right way
-				// to do this
-				if s.rpcChan == nil {
-					s.logger.Warn("rpc channel closed. aborting.")
-					break
-				}
-				s.rpcChan <- rpc
-			}
-		}(tr)
-
+// setup connection bi-directional connect
+// in the transports in s and the inputs
+func (s *Server) Connect(strangers ...Transport) error {
+	for _, pt := range strangers {
+		s.logger.Info("connect",
+			zap.Any("from", s.Transport.Addr()),
+			zap.Any("to", pt.Addr()))
+		if s.Transport.Addr() == pt.Addr() {
+			continue
+		}
+		// might need to handle multiple attempts to connect to same transport. thinking in transport itself, idempotent
+		err := s.Transport.Connect(pt)
+		if err != nil {
+			return fmt.Errorf("error connecting from server %s to %s",
+				s.Transport.Addr(), pt.Addr())
+		}
 	}
+	return nil
 }
 
+// setup up by directional messages
+// adds each other to peer list
+func (s *Server) Join(peer *Server) error {
+	s.logger.Info("join",
+		zap.String("requestor", s.ID),
+		zap.String("peer", peer.ID),
+	)
+	// request to peer
+	err := s.Subscribe(peer.Transport)
+	if err != nil {
+		return err
+	}
+
+	err = peer.Subscribe(s.Transport)
+	if err != nil {
+		return err
+	}
+	// if ok, then
+	return nil
+}
+
+// add s to leader's peers
+// subscribe might be cleaner in the transport layer, analog to consume
+func (s *Server) Subscribe(leader Transport) error {
+	s.logger.Info("subscribe",
+		zap.String("to", string(leader.Addr())),
+		zap.String("subscriber", s.ID),
+	)
+
+	s.PeerTransports = append(s.PeerTransports, leader)
+
+	// TODO server consumer wait group
+	go func(tr Transport) {
+		s.logger.Debug("initializing consumer for peer",
+			zap.String("peer address", string(tr.Addr())),
+		)
+		for rpc := range tr.Consume() {
+			// we need to do something with the messages
+			// we would like to keep it simple and flexible
+			// to that end, we simply forward to a channel
+			// owned by the server
+
+			//hack to handle shutdown. need to think about the right way
+			// to do this
+			if s.rpcChan == nil {
+				s.logger.Warn("rpc channel closed. aborting.")
+				break
+			}
+			s.rpcChan <- rpc
+		}
+	}(leader)
+
+	return nil
+}
+
+/*
+// func (s *Server) Add
+
+	func (s *Server) initTransports() {
+		// make each transport listen for messages
+		for _, tr := range s.PeerTransports {
+			go func(tr Transport) {
+				s.logger.Debug("initializing consumer for peer",
+					zap.String("peer address", string(tr.Addr())),
+				)
+				for rpc := range tr.Consume() {
+					// we need to do something with the messages
+					// we would like to keep it simple and flexible
+					// to that end, we simply forward to a channel
+					// owned by the server
+
+					//hack to handle shutdown. need to think about the right way
+					// to do this
+					if s.rpcChan == nil {
+						s.logger.Warn("rpc channel closed. aborting.")
+						break
+					}
+					s.rpcChan <- rpc
+				}
+			}(tr)
+
+		}
+	}
+*/
 func createGenesis() *core.Block {
 	h := &core.Header{
 		Version:   1,

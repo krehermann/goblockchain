@@ -33,17 +33,9 @@ func main() {
 
 	local := network.NewLocalTransport("local")
 	peer0 := network.NewLocalTransport("peer0")
-	peer1 := network.NewLocalTransport("peer1")
-	peer2 := network.NewLocalTransport("peer2")
-
-	/*
-		fatalIfErr(cancelFunc, local.Connect(peer0))
-		fatalIfErr(cancelFunc, peer0.Connect(local))
-
-		fatalIfErr(cancelFunc, peer0.Connect(peer1))
-		fatalIfErr(cancelFunc, peer1.Connect(peer2))
-	*/
-	remotes := initRemoteServers(ctx, peer0, peer1, peer2)
+	// peer1 := network.NewLocalTransport("peer1")
+	// peer2 := network.NewLocalTransport("peer2")
+	remotes := initRemoteServers(ctx, peer0)
 
 	go func() {
 		cnt := 0
@@ -55,7 +47,13 @@ func main() {
 	}()
 
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
+	//	localServer.PeerTransports = append(localServer.PeerTransports, remotes[0].Transport)
+
 	go localServer.Start(ctx)
+	err = remotes[0].Connect(localServer.Transport)
+	fatalIfErr(cancelFunc, err)
+	err = remotes[0].Join(localServer)
+	fatalIfErr(cancelFunc, err)
 
 	time.Sleep(8 * time.Second)
 	cancelFunc()
@@ -114,16 +112,16 @@ func mustMakeServer(opts network.ServerOpts) *network.Server {
 func makeValidatorOpts(id string, tr network.Transport) network.ServerOpts {
 	privKey := crypto.MustGeneratePrivateKey()
 	return network.ServerOpts{
-		PrivateKey:     privKey,
-		ID:             id,
-		PeerTransports: []network.Transport{tr},
+		PrivateKey: privKey,
+		ID:         id,
+		Transport:  tr,
 	}
 }
 
 func makeNonValidatorOpts(id string, tr network.Transport) network.ServerOpts {
 	return network.ServerOpts{
-		ID:             id,
-		PeerTransports: []network.Transport{tr},
+		ID:        id,
+		Transport: tr,
 	}
 }
 
