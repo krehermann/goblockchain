@@ -9,3 +9,11 @@ type StatusMessageResponse struct {
 type StatusMessageRequest struct {
 	RequestorID string
 }
+
+type SubscribeMessageResponse struct {
+}
+
+type SubscribeMessageRequest struct {
+	RequestorID   string
+	RequestorAddr NetAddr
+}

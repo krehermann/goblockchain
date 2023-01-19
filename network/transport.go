@@ -10,9 +10,12 @@ type NetAddr string
 // module in Transport
 type Transport interface {
 	Consume() <-chan RPC
+
 	Connect(Transport) error
 	Send(NetAddr, Payload) error
 	Addr() NetAddr
+
+	Get(NetAddr) (Transport, bool)
 	// transport is agnostic to the types in the payload
 	Broadcast(payload Payload) error
 }

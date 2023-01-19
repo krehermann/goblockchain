@@ -15,11 +15,21 @@ const (
 	MessageTypeTx MessageType = iota
 	MessageTypeBlock
 	// status is message for onboarding to the network
-	MessageTypeStatusResponse
 	MessageTypeStatusRequest
+	MessageTypeStatusResponse
+
+	MessageTypeSubscribeResponse
+	MessageTypeSubscribeRequest
 )
 
-var MessageTypes = []MessageType{MessageTypeTx, MessageTypeBlock}
+var MessageTypes = []MessageType{
+	MessageTypeTx,
+	MessageTypeBlock,
+	MessageTypeStatusRequest,
+	MessageTypeStatusResponse,
+	MessageTypeSubscribeRequest,
+	MessageTypeSubscribeResponse,
+}
 
 func (mt MessageType) String() string {
 	var out string
@@ -28,10 +38,14 @@ func (mt MessageType) String() string {
 		out = "MessageTypeBlock"
 	case MessageTypeTx:
 		out = "MessageTypeTx"
-	case MessageTypeStatusResponse:
-		out = "MessageTypeStatusResponse"
 	case MessageTypeStatusRequest:
 		out = "MessageTypeStatusRequest"
+	case MessageTypeStatusResponse:
+		out = "MessageTypeStatusResponse"
+	case MessageTypeSubscribeRequest:
+		out = "MessageTypeSubscribeRequest"
+	case MessageTypeSubscribeResponse:
+		out = "MessageTypeSubscribeResponse"
 	default:
 		out = "unknown"
 	}
@@ -109,4 +123,28 @@ func newMessageFromStatusMessageRequest(s *StatusMessageRequest) (*Message, erro
 		return nil, fmt.Errorf("failed to convert status message request to Message: %w", err)
 	}
 	return NewMessage(MessageTypeStatusRequest, buf.Bytes()), nil
+}
+
+// helper to create a Message from block
+// note to self: need to live in this package rather than func on tx
+// because it is the right layering -- messages can wrap anything
+// making a func on tx to create a message would be dependency invertion
+func newMessageFromSubscribeMessageResponse(s *SubscribeMessageResponse) (*Message, error) {
+
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert status message response to Message: %w", err)
+	}
+	return NewMessage(MessageTypeSubscribeResponse, buf.Bytes()), nil
+}
+
+func newMessageFromSubscribeMessageRequest(s *SubscribeMessageRequest) (*Message, error) {
+
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert status message request to Message: %w", err)
+	}
+	return NewMessage(MessageTypeSubscribeRequest, buf.Bytes()), nil
 }

@@ -1,3 +1,28 @@
+Refactoring transport in support of block syncing
+Refactor transport connections
+
+
+the binding between the transport and the server is broken.
+
+initTransports is supposed to own consumption from peers.
+
+however the transports connect on their own. they broadcast messages to each
+other. since we are only using local transports, there is a path -- which is
+the only path we've been using -- were the transports connect to each other,
+no peers are configured to the server, and yet messages get from one server
+to the other.
+
+either transport bookkeeping is broken, or the server consumption.
+
+one thought is to formalize joining a server. a.Join(b) this would be responsible for setting up a consumer in b of a and vice versa.
+
+
+Another problem along the way is was that the implementation of LocalTransport.Connect was uni-directional. In retrospect, i  think
+this caused a lot of confusion. It mixed up the notion of a server peer with a transport connection. That is, because the connection was uni-directional
+one could treat the transport as a peer in the network than a server. Instead, the transport connection needs to be bi-directional, and the server layer 
+needs to own which servers it communicates with as peers. The pre-requisite for peer communication is a connection, but it is not sufficient.
+
+
 Add network tests
 
 The code in main was too confusing. Turn it into a real test

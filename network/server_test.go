@@ -37,7 +37,7 @@ func TestNetwork(t *testing.T) {
 	n := newNetwork(t, ctx, blockTime, l)
 
 	v := generateValidator(t, l, "validator")
-	nonValidators := generateNonValidators(t, l, []string{"r0", "r1", "r2"}...)
+	nonValidators := generateNonValidators(t, l, []string{"r0"}...)
 
 	n.register(v)
 	n.register(nonValidators...)
@@ -46,15 +46,25 @@ func TestNetwork(t *testing.T) {
 
 	toplgy.connect(v.ID, nonValidators[0].ID)
 	toplgy.connect(nonValidators[0].ID, v.ID)
-	toplgy.connect(nonValidators[0].ID, nonValidators[1].ID)
-	toplgy.connect(nonValidators[1].ID, nonValidators[2].ID)
+
+	//toplgy.connect(nonValidators[0].ID, nonValidators[1].ID)
+	//toplgy.connect(nonValidators[1].ID, nonValidators[2].ID)
 
 	n.setTopology(toplgy)
-	n.initializeConnections()
+	//n.connectAll()
 
 	n.startServers()
 
-	n.runFor(5, cancelFunc)
+	time.Sleep(4 * blockTime)
+
+	lateComer := generateNonValidators(t, l, "late")[0]
+	// the transport layer is kinda fucked
+	// shenignans here
+	n.register(lateComer)
+	n.toplgy.connect(lateComer.ID, v.ID)
+	n.initServer(lateComer, v)
+
+	n.runFor(3, cancelFunc)
 
 	servers := make([]*Server, 0)
 	for _, server := range n.Servers {
@@ -70,7 +80,11 @@ func TestNetwork(t *testing.T) {
 		for j := i + 1; j < len(servers); j++ {
 			serverJ := servers[j]
 			hgtJ := serverJ.chain.Height()
-			assert.InDelta(t, hgtI, hgtJ, 1)
+			assert.InDelta(t, hgtI, hgtJ, 1,
+				"heights differ too much between %s (%d) and %s (%d)",
+				serverI.ID, hgtI,
+				serverJ.ID, hgtJ,
+			)
 			common := int(math.Min(float64(hgtI), float64(hgtJ)))
 			hdrI, err := serverI.chain.GetHeader(uint32(common))
 			assert.NoError(t, err)
@@ -86,10 +100,10 @@ func TestNetwork(t *testing.T) {
 
 func (n *network) runFor(nBlocks int, cancel context.CancelFunc) {
 	x := 1.5 * float64(nBlocks)
-	sec := n.blockTime.Seconds()
-	sleepMill := int64(x*sec) * 1000
+	msec := float64(n.blockTime.Milliseconds())
+	sleepMill := x * msec
 	d := time.Duration(sleepMill) * time.Millisecond
-	zap.L().Sugar().Infof("running network for %d seconds", d.Seconds())
+	zap.L().Sugar().Infof("running network for %d milliseconds", d.Milliseconds())
 
 	time.Sleep(d)
 	zap.L().Sugar().Info("TEST CALLING CANCEL")
@@ -104,14 +118,7 @@ func (n *network) addPeer(from, to *Server) {
 		zap.String("from", from.ID),
 		zap.String("to", to.ID),
 	)
-	fromTransport := from.Transports[0]
-	require.NotEmpty(n.t, fromTransport)
 
-	toTransport := to.Transports[0]
-	require.NotEmpty(n.t, toTransport)
-
-	require.NoError(n.t,
-		fromTransport.Connect(toTransport))
 }
 
 type topology struct {
@@ -162,34 +169,54 @@ func (n *network) setTopology(t *topology) {
 	n.toplgy = t
 }
 
-func (n *network) initializeConnections() {
+func (n *network) connectAll() {
 	require.NotNil(n.t, n.toplgy, "network has no toplogy")
 	require.NotNil(n.t, n.Servers, "network has no servers")
 
-	for fromId, peerIds := range n.toplgy.connections {
-		fromServer, exists := n.Servers[fromId]
-		require.True(n.t, exists, "server id %s in topology but not in network", fromId)
-		for _, peerId := range peerIds {
-			peerServer, exists := n.Servers[peerId]
-			require.True(n.t, exists, "server id %s in topology but not in network", peerId)
-
-			n.addPeer(fromServer, peerServer)
-		}
+	for _, s := range n.Servers {
+		n.initializeConnections(s)
 	}
+
+}
+
+func (n *network) initializeConnections(s *Server) {
+	fromServer, exists := n.Servers[s.ID]
+	peerIds := n.toplgy.connections[s.ID]
+	require.True(n.t, exists, "server id %s in topology but not in network", fromServer.ID)
+	for _, peerId := range peerIds {
+		peerServer, exists := n.Servers[peerId]
+		require.True(n.t, exists, "server id %s in topology but not in network", peerId)
+
+		require.NoError(n.t,
+			fromServer.Connect(peerServer.Transport))
+
+	}
+}
+
+func (n *network) initServer(s *Server, seeds ...*Server) {
+	n.initializeConnections(s)
+	// seed is the incoming connection to the given server
+	for _, seed := range seeds {
+		n.logger.Sugar().Info("seeding %s from %s", s.ID, seed.ID)
+
+		require.NoError(n.t,
+			s.Connect(seed.Transport))
+	}
+
+	n.t.Logf("test network starting %s", s.ID)
+	n.wg.Add(1)
+	go func(s *Server) {
+		defer n.wg.Done()
+		err := s.Start(n.ctx)
+		n.logger.Sugar().Infof("server %s shutdown", s.ID)
+		require.NoError(n.t, err)
+	}(s)
 }
 
 func (n *network) startServers() {
 
-	for id, server := range n.Servers {
-		n.t.Logf("test network starting %s", id)
-		n.wg.Add(1)
-		go func(s *Server) {
-			defer n.wg.Done()
-			err := s.Start(n.ctx)
-			n.logger.Sugar().Infof("server %s shutdown", s.ID)
-			require.NoError(n.t, err)
-
-		}(server)
+	for _, server := range n.Servers {
+		n.initServer(server)
 	}
 }
 
@@ -243,14 +270,16 @@ func makeValidatorOpts(id string, tr Transport) ServerOpts {
 	return ServerOpts{
 		PrivateKey: privKey,
 		ID:         id,
-		Transports: []Transport{tr},
+		Transport:  tr,
+		//PeerTransports: []Transport{tr},
 	}
 }
 
 func makeNonValidatorOpts(id string, tr Transport) ServerOpts {
 	return ServerOpts{
-		ID:         id,
-		Transports: []Transport{tr},
+		ID:        id,
+		Transport: tr,
+		//PeerTransports: []Transport{tr},
 	}
 }
 
