@@ -23,7 +23,8 @@ func (v *BlockValidator) ValidateBlock(b *Block) error {
 
 	// implicitly we are only validating blocks after the genesis
 	if b.Height != v.bc.Height()+1 {
-		return fmt.Errorf("chain cannot already block with height %d because does not match expect chain height %d", b.Height, v.bc.Height())
+		//return fmt.Errorf("chain cannot already block with height %d because does not match expect chain height %d", b.Height, v.bc.Height())
+		return NewErrOutOfSync(int(b.Height) - int(v.bc.Height()))
 	}
 
 	prevHeader, err := v.bc.GetHeader(b.Height - 1)

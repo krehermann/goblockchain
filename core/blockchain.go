@@ -13,6 +13,21 @@ import (
 // Blockchain is essentially a big state machine
 // each transaction can cause a transition
 
+type ErrOutOfSync struct {
+	//err error
+	Lag int
+}
+
+func NewErrOutOfSync(lag int) *ErrOutOfSync {
+	return &ErrOutOfSync{
+		Lag: lag,
+	}
+}
+
+func (eos *ErrOutOfSync) Error() string {
+	return fmt.Sprintf("behind by %d blocks", eos.Lag)
+}
+
 type Blockchain struct {
 	store Storager
 
@@ -58,7 +73,8 @@ func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 func (bc *Blockchain) AddBlock(b *Block) error {
 	err := bc.validator.ValidateBlock(b)
 	if err != nil {
-		return fmt.Errorf("add block: invalid block: %w", err)
+		return err
+		//return fmt.Errorf("add block: invalid block: %w", err)
 	}
 
 	// run vm code
