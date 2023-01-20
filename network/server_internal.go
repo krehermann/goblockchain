@@ -238,7 +238,7 @@ func (s *Server) handleBlock(b *core.Block) error {
 			s.logger.Error("got out of sync error", zap.Error(err))
 			if syncErr.Lag > 3 {
 				// self heal
-				s.requestBlocks(sync.Lag)
+				s.requestBlocks()
 			}
 		} else {
 			return err
@@ -250,9 +250,52 @@ func (s *Server) handleBlock(b *core.Block) error {
 			s.errChan <- err
 		}
 	}()
+
 	return nil
 }
 
-func (s *Server) requestBlocks(n int) error {
+func (s *Server) requestBlocks() error {
+	n := s.chain.Height() + 1
+	req := &GetBlocksRequest{
+		StartHeight: n,
+	}
+	msg, err := newMessageFromGetBlocksRequest(req)
+
+	if err != nil {
+		return err
+	}
+
+	return s.broadcast(msg)
+
+}
+
+func (s *Server) handleGetBlocksRequest(msg *GetBlocksRequest) error {
+	s.logger.Info("handleGetBlocksRequest",
+		zap.Any("req", msg),
+	)
+
+	blocksToSend := make([]*core.Block, 0)
+	for i := msg.StartHeight; i <= s.chain.Height(); i++ {
+		block, err := s.chain.GetBlockAt(i)
+		if err != nil {
+			return err
+		}
+		blocksToSend = append(blocksToSend, block)
+	}
+
+	return nil
+}
+
+func (s *Server) handleGetBlocksResponse(msg *GetBlocksResponse) error {
+	s.logger.Info("handleGetBlocksResponse",
+		zap.Any("response", msg),
+	)
+
+	for _, b := range msg.Blocks {
+		err := s.chain.AddBlock(b)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }

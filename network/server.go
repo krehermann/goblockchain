@@ -201,6 +201,18 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 			zap.String("from", string(dmsg.From)))
 		return s.handleSubscribeMessageResponse(t)
 
+	case *GetBlocksRequest:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeGetBlocksRequest.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleGetBlocksRequest(t)
+
+	case *GetBlocksResponse:
+		s.logger.Info("ProcessMessage",
+			zap.String("type", MessageTypeGetBlocksResponse.String()),
+			zap.String("from", string(dmsg.From)))
+		return s.handleGetBlocksResponse(t)
+
 	default:
 		s.logger.Info("ProcessMessage",
 			zap.Any("type", t),

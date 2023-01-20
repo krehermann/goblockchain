@@ -129,6 +129,15 @@ func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
 	return bc.headers[height], nil
 }
 
+func (bc *Blockchain) GetBlockAt(height uint32) (*Block, error) {
+	hdr, err := bc.GetHeader(height)
+	if err != nil {
+		return nil, err
+	}
+
+	return bc.store.Get(hdr)
+}
+
 func (bc *Blockchain) addGensisBlock(b *Block) error {
 	// scope the lock
 	err := func() error {

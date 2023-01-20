@@ -20,6 +20,9 @@ const (
 
 	MessageTypeSubscribeResponse
 	MessageTypeSubscribeRequest
+
+	MessageTypeGetBlocksRequest
+	MessageTypeGetBlocksResponse
 )
 
 var MessageTypes = []MessageType{
@@ -29,6 +32,9 @@ var MessageTypes = []MessageType{
 	MessageTypeStatusResponse,
 	MessageTypeSubscribeRequest,
 	MessageTypeSubscribeResponse,
+
+	MessageTypeGetBlocksRequest,
+	MessageTypeGetBlocksResponse,
 }
 
 func (mt MessageType) String() string {
@@ -46,6 +52,10 @@ func (mt MessageType) String() string {
 		out = "MessageTypeSubscribeRequest"
 	case MessageTypeSubscribeResponse:
 		out = "MessageTypeSubscribeResponse"
+	case MessageTypeGetBlocksRequest:
+		out = "MessageTypeGetBlocksRequest"
+	case MessageTypeGetBlocksResponse:
+		out = "MessageTypeGetBlocksResponse"
 	default:
 		out = "unknown"
 	}
@@ -147,4 +157,28 @@ func newMessageFromSubscribeMessageRequest(s *SubscribeMessageRequest) (*Message
 		return nil, fmt.Errorf("failed to convert status message request to Message: %w", err)
 	}
 	return NewMessage(MessageTypeSubscribeRequest, buf.Bytes()), nil
+}
+
+// helper to create a Message from block
+// note to self: need to live in this package rather than func on tx
+// because it is the right layering -- messages can wrap anything
+// making a func on tx to create a message would be dependency invertion
+func newMessageFromGetBlocksRequest(s *GetBlocksRequest) (*Message, error) {
+
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert status message response to Message: %w", err)
+	}
+	return NewMessage(MessageTypeGetBlocksRequest, buf.Bytes()), nil
+}
+
+func newMessageFromGetBlocksResponse(s *GetBlocksResponse) (*Message, error) {
+
+	buf := &bytes.Buffer{}
+	err := gob.NewEncoder(buf).Encode(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert status message request to Message: %w", err)
+	}
+	return NewMessage(MessageTypeGetBlocksResponse, buf.Bytes()), nil
 }

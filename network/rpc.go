@@ -111,6 +111,27 @@ func ExtractMessageFromRPC(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
+	case MessageTypeGetBlocksRequest:
+		sMsg := new(GetBlocksRequest)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode get block request message from %s: %w", rpc.From, err)
+		}
+
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
+	case MessageTypeGetBlocksResponse:
+		sMsg := new(GetBlocksResponse)
+		err := gob.NewDecoder(msgReader).Decode(sMsg)
+		if err != nil {
+			return &out, fmt.Errorf("HandleRPC: failed to decode get block response message from %s: %w", rpc.From, err)
+		}
+		out = DecodedMessage{
+			From: rpc.From,
+			Data: sMsg}
+
 	default:
 		return &out, fmt.Errorf("invalid message type %s", msg.Header)
 
