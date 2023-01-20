@@ -129,6 +129,9 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcast(msg *Message) error {
+	if len(s.PeerTransports) == 0 {
+		s.logger.Warn("broadcasting without peers")
+	}
 	for _, peer := range s.PeerTransports {
 		err := s.send(peer.Addr(), msg)
 		if err != nil {
@@ -236,29 +239,35 @@ func (s *Server) handleBlock(b *core.Block) error {
 		syncErr := new(core.ErrOutOfSync)
 		if errors.As(err, &syncErr) {
 			s.logger.Error("got out of sync error", zap.Error(err))
-			if syncErr.Lag > 3 {
-				// self heal
-				s.requestBlocks()
-			}
+			//if syncErr.Lag >  {
+			// self heal
+			s.requestBlocks()
+			//}
 		} else {
 			return err
 		}
+	} else {
+		go func() {
+			err := s.broadcastBlock(b)
+			if err != nil {
+				s.errChan <- err
+			}
+		}()
 	}
-	go func() {
-		err := s.broadcastBlock(b)
-		if err != nil {
-			s.errChan <- err
-		}
-	}()
-
 	return nil
 }
 
 func (s *Server) requestBlocks() error {
 	n := s.chain.Height() + 1
 	req := &GetBlocksRequest{
-		StartHeight: n,
+		RequestorID:   s.ID,
+		RequestorAddr: s.Transport.Addr(),
+		StartHeight:   n,
 	}
+	s.logger.Info("requesting blocks",
+		zap.Any("request", req),
+	)
+
 	msg, err := newMessageFromGetBlocksRequest(req)
 
 	if err != nil {
@@ -283,6 +292,14 @@ func (s *Server) handleGetBlocksRequest(msg *GetBlocksRequest) error {
 		blocksToSend = append(blocksToSend, block)
 	}
 
+	resp := &GetBlocksResponse{
+		Blocks: blocksToSend,
+	}
+	out, err := newMessageFromGetBlocksResponse(resp)
+	if err != nil {
+		return err
+	}
+	s.send(msg.RequestorAddr, out)
 	return nil
 }
 
@@ -292,9 +309,11 @@ func (s *Server) handleGetBlocksResponse(msg *GetBlocksResponse) error {
 	)
 
 	for _, b := range msg.Blocks {
-		err := s.chain.AddBlock(b)
-		if err != nil {
-			return err
+		if !s.chain.HasBlockAtHeight(b.Height) {
+			err := s.chain.AddBlock(b)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

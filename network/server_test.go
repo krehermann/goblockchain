@@ -23,7 +23,7 @@ func TestNetwork(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancelFunc := context.WithCancel(ctx)
 
-	blockTime := 100 * time.Millisecond
+	blockTime := 500 * time.Millisecond
 
 	l, err := zap.NewDevelopment()
 	assert.NoError(t, err)
@@ -58,11 +58,12 @@ func TestNetwork(t *testing.T) {
 	time.Sleep(4 * blockTime)
 
 	lateComer := generateNonValidators(t, l, "late")[0]
-	// the transport layer is kinda fucked
-	// shenignans here
+
 	n.register(lateComer)
 	n.toplgy.connect(lateComer.ID, v.ID)
-	n.initServer(lateComer, v)
+	n.startServer(lateComer)
+	n.initializeConnections(lateComer)
+	lateComer.Join(v)
 
 	n.runFor(3, cancelFunc)
 
@@ -186,23 +187,16 @@ func (n *network) initializeConnections(s *Server) {
 	for _, peerId := range peerIds {
 		peerServer, exists := n.Servers[peerId]
 		require.True(n.t, exists, "server id %s in topology but not in network", peerId)
-
-		require.NoError(n.t,
-			fromServer.Connect(peerServer.Transport))
-
+		require.NoError(n.t, fromServer.Connect(peerServer.Transport))
+	}
+	for _, peerId := range peerIds {
+		peerServer, exists := n.Servers[peerId]
+		require.True(n.t, exists, "server id %s in topology but not in network", peerId)
+		require.NoError(n.t, fromServer.Subscribe(peerServer.Transport))
 	}
 }
 
-func (n *network) initServer(s *Server, seeds ...*Server) {
-	n.initializeConnections(s)
-	// seed is the incoming connection to the given server
-	for _, seed := range seeds {
-		n.logger.Sugar().Info("seeding %s from %s", s.ID, seed.ID)
-
-		require.NoError(n.t, s.Connect(seed.Transport))
-		require.NoError(n.t, s.Subscribe(seed.Transport))
-	}
-
+func (n *network) startServer(s *Server) {
 	n.t.Logf("test network starting %s", s.ID)
 	n.wg.Add(1)
 	go func(s *Server) {
@@ -216,7 +210,11 @@ func (n *network) initServer(s *Server, seeds ...*Server) {
 func (n *network) startServers() {
 
 	for _, server := range n.Servers {
-		n.initServer(server)
+		n.startServer(server)
+	}
+
+	for _, server := range n.Servers {
+		n.initializeConnections(server)
 	}
 }
 

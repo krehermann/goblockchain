@@ -9,7 +9,7 @@ type NetAddr string
 
 // module in Transport
 type Transport interface {
-	Consume() <-chan RPC
+	Recv() <-chan RPC
 
 	Connect(Transport) error
 	Send(NetAddr, Payload) error
