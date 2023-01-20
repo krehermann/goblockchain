@@ -1,6 +1,8 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Storager interface {
 	Put(b *Block) error
@@ -35,21 +37,23 @@ func NewMemStore() *MemStore {
 }
 
 func (s *MemStore) handleAccess() {
-	select {
-	case b := <-s.putChan:
-		s.data[b.Header] = b
-	case req := <-s.readChan:
-		b, ok := s.data[req.key]
-		req.response <- &lookupResult{
-			b:      b,
-			exists: ok,
+	for {
+		select {
+		case b := <-s.putChan:
+			s.data[b.Header] = b
+		case req := <-s.readChan:
+			b, ok := s.data[req.key]
+			req.response <- &lookupResult{
+				b:      b,
+				exists: ok,
+			}
+
 		}
-
 	}
-
 }
 
 func (ms *MemStore) Put(b *Block) error {
+
 	ms.putChan <- b
 	return nil
 }

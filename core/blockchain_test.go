@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/krehermann/goblockchain/types"
@@ -26,11 +27,28 @@ func TestHasBlock(t *testing.T) {
 func TestAddBlock(t *testing.T) {
 	bc := newTestBlockChain(t, randomGenesisBlock(t))
 
+	expectedBlocks := make(map[uint32]*Block)
+
 	nBlocks := uint32(100)
 	for i := uint32(1); i <= nBlocks; i += 1 {
 		prevBlockHash := getPrevBlockHash(t, bc, i)
-		require.NoError(t, bc.AddBlock(randomBlockWithSignature(t, i, prevBlockHash)), "adding block %d", i)
+		b := randomBlockWithSignature(t, i, prevBlockHash)
+		require.NoError(t, bc.AddBlock(b), "adding block %d", i)
 		assert.True(t, bc.HasBlockAtHeight(i))
+
+		got, err := bc.GetBlockAt(i)
+		assert.NoError(t, err)
+		assert.Equal(t, b, got)
+
+		// pick random height and make sure we can get the block
+		if i > 1 {
+			prevHeight := rand.Intn(int(i)-1) + 1
+			gotPrev, err := bc.GetBlockAt(uint32(prevHeight))
+			assert.NoError(t, err)
+			assert.Equal(t, expectedBlocks[uint32(prevHeight)], gotPrev, "iteration %d, prev height %d", i, prevHeight)
+		}
+		// add to the expected list
+		expectedBlocks[i] = b
 	}
 
 	assert.Equal(t, nBlocks, bc.Height())
@@ -40,6 +58,7 @@ func TestAddBlock(t *testing.T) {
 
 	// too high
 	assert.Error(t, bc.AddBlock(randomBlockWithSignature(t, nBlocks*2, types.Hash{})))
+
 }
 
 func TestGetHeader(t *testing.T) {
