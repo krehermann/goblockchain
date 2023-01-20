@@ -1,4 +1,4 @@
-package network
+package server
 
 import (
 	"context"
@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/types"
 	"go.uber.org/zap"
 )
 
@@ -59,8 +62,8 @@ loop:
 
 }
 
-func (s *Server) currentStatus() (*StatusMessageResponse, error) {
-	status := new(StatusMessageResponse)
+func (s *Server) currentStatus() (*api.StatusMessageResponse, error) {
+	status := new(api.StatusMessageResponse)
 
 	hght := s.chain.Height()
 	ver := uint32(0)
@@ -75,13 +78,13 @@ func (s *Server) currentStatus() (*StatusMessageResponse, error) {
 }
 
 func (s *Server) sendStartupStatusRequests() error {
-	req := new(StatusMessageRequest)
+	req := new(api.StatusMessageRequest)
 	req.RequestorID = s.ID
 	s.logger.Debug("sending startup status",
 		zap.Any("msg", req),
 	)
 
-	msg, err := newMessageFromStatusMessageRequest(req)
+	msg, err := api.NewMessageFromStatusMessageRequest(req)
 	if err != nil {
 		return err
 	}
@@ -121,14 +124,14 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 	s.logger.Debug("broadcastTx",
 		zap.Any("hash", tx.Hash(&core.DefaultTxHasher{}).Prefix()))
 
-	msg, err := newMessageFromTransaction(tx)
+	msg, err := api.NewMessageFromTransaction(tx)
 	if err != nil {
 		return err
 	}
 	return s.broadcast(msg)
 }
 
-func (s *Server) broadcast(msg *Message) error {
+func (s *Server) broadcast(msg *api.Message) error {
 	if len(s.PeerTransports) == 0 {
 		s.logger.Warn("broadcasting without peers")
 	}
@@ -141,7 +144,7 @@ func (s *Server) broadcast(msg *Message) error {
 	return nil
 }
 
-func (s *Server) send(addr NetAddr, msg *Message) error {
+func (s *Server) send(addr types.NetAddr, msg *api.Message) error {
 	data, err := msg.Bytes()
 	if err != nil {
 		return err
@@ -149,14 +152,14 @@ func (s *Server) send(addr NetAddr, msg *Message) error {
 	if data == nil {
 		panic("nil payload")
 	}
-	return s.Transport.Send(addr, CreatePayload(data))
+	return s.Transport.Send(addr, network.CreatePayload(data))
 }
 
 func (s *Server) broadcastBlock(b *core.Block) error {
 	s.logger.Info("broadcast block",
 		zap.String("hash", b.Hash(core.DefaultBlockHasher{}).Prefix()),
 	)
-	msg, err := newMessageFromBlock(b)
+	msg, err := api.NewMessageFromBlock(b)
 	if err != nil {
 		return err
 	}
@@ -202,7 +205,7 @@ func (s *Server) createNewBlock() error {
 	return nil
 }
 
-func (s *Server) handleStatusMessageResponse(smsg *StatusMessageResponse) error {
+func (s *Server) handleStatusMessageResponse(smsg *api.StatusMessageResponse) error {
 	s.logger.Info("handleStatusMessageResponse",
 		zap.Any("status", smsg),
 	)
@@ -210,7 +213,7 @@ func (s *Server) handleStatusMessageResponse(smsg *StatusMessageResponse) error 
 	return nil
 }
 
-func (s *Server) handleStatusMessageRequest(smsg *StatusMessageRequest) error {
+func (s *Server) handleStatusMessageRequest(smsg *api.StatusMessageRequest) error {
 	s.logger.Info("handleStatusMessageRequest",
 		zap.Any("status", smsg),
 	)
@@ -220,7 +223,7 @@ func (s *Server) handleStatusMessageRequest(smsg *StatusMessageRequest) error {
 	if err != nil {
 		return err
 	}
-	msg, err := newMessageFromStatusMessageResponse(cur)
+	msg, err := api.NewMessageFromStatusMessageResponse(cur)
 	if err != nil {
 		return err
 	}
@@ -259,7 +262,7 @@ func (s *Server) handleBlock(b *core.Block) error {
 
 func (s *Server) requestBlocks() error {
 	n := s.chain.Height() + 1
-	req := &GetBlocksRequest{
+	req := &api.GetBlocksRequest{
 		RequestorID:   s.ID,
 		RequestorAddr: s.Transport.Addr(),
 		StartHeight:   n,
@@ -268,7 +271,7 @@ func (s *Server) requestBlocks() error {
 		zap.Any("request", req),
 	)
 
-	msg, err := newMessageFromGetBlocksRequest(req)
+	msg, err := api.NewMessageFromGetBlocksRequest(req)
 
 	if err != nil {
 		return err
@@ -278,7 +281,7 @@ func (s *Server) requestBlocks() error {
 
 }
 
-func (s *Server) handleGetBlocksRequest(msg *GetBlocksRequest) error {
+func (s *Server) handleGetBlocksRequest(msg *api.GetBlocksRequest) error {
 	s.logger.Info("handleGetBlocksRequest",
 		zap.Any("req", msg),
 	)
@@ -292,10 +295,10 @@ func (s *Server) handleGetBlocksRequest(msg *GetBlocksRequest) error {
 		blocksToSend = append(blocksToSend, block)
 	}
 
-	resp := &GetBlocksResponse{
+	resp := &api.GetBlocksResponse{
 		Blocks: blocksToSend,
 	}
-	out, err := newMessageFromGetBlocksResponse(resp)
+	out, err := api.NewMessageFromGetBlocksResponse(resp)
 	if err != nil {
 		return err
 	}
@@ -303,7 +306,7 @@ func (s *Server) handleGetBlocksRequest(msg *GetBlocksRequest) error {
 	return nil
 }
 
-func (s *Server) handleGetBlocksResponse(msg *GetBlocksResponse) error {
+func (s *Server) handleGetBlocksResponse(msg *api.GetBlocksResponse) error {
 	s.logger.Info("handleGetBlocksResponse",
 		zap.Any("response", msg),
 	)

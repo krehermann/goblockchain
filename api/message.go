@@ -1,4 +1,4 @@
-package network
+package api
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/network"
 )
 
 // MessageType identities the type data enveloped in a Message
@@ -87,7 +88,7 @@ func (m *Message) Bytes() ([]byte, error) {
 // note to self: need to live in this package rather than func on tx
 // because it is the right layering -- messages can wrap anything
 // making a func on tx to create a message would be dependency invertion
-func newMessageFromTransaction(tx *core.Transaction) (*Message, error) {
+func NewMessageFromTransaction(tx *core.Transaction) (*Message, error) {
 	buf := &bytes.Buffer{}
 	// TODO does this encoder need to be a parameter?
 	err := tx.Encode(core.NewGobTxEncoder(buf))
@@ -101,7 +102,7 @@ func newMessageFromTransaction(tx *core.Transaction) (*Message, error) {
 // note to self: need to live in this package rather than func on tx
 // because it is the right layering -- messages can wrap anything
 // making a func on tx to create a message would be dependency invertion
-func newMessageFromBlock(b *core.Block) (*Message, error) {
+func NewMessageFromBlock(b *core.Block) (*Message, error) {
 	buf := &bytes.Buffer{}
 	// TODO does this encoder need to be a parameter?
 	err := b.Encode(core.NewDefaultBlockEncoder(buf))
@@ -115,7 +116,7 @@ func newMessageFromBlock(b *core.Block) (*Message, error) {
 // note to self: need to live in this package rather than func on tx
 // because it is the right layering -- messages can wrap anything
 // making a func on tx to create a message would be dependency invertion
-func newMessageFromStatusMessageResponse(s *StatusMessageResponse) (*Message, error) {
+func NewMessageFromStatusMessageResponse(s *StatusMessageResponse) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -125,7 +126,7 @@ func newMessageFromStatusMessageResponse(s *StatusMessageResponse) (*Message, er
 	return NewMessage(MessageTypeStatusResponse, buf.Bytes()), nil
 }
 
-func newMessageFromStatusMessageRequest(s *StatusMessageRequest) (*Message, error) {
+func NewMessageFromStatusMessageRequest(s *StatusMessageRequest) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -139,7 +140,7 @@ func newMessageFromStatusMessageRequest(s *StatusMessageRequest) (*Message, erro
 // note to self: need to live in this package rather than func on tx
 // because it is the right layering -- messages can wrap anything
 // making a func on tx to create a message would be dependency invertion
-func newMessageFromSubscribeMessageResponse(s *SubscribeMessageResponse) (*Message, error) {
+func NewMessageFromSubscribeMessageResponse(s *SubscribeMessageResponse) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -149,7 +150,7 @@ func newMessageFromSubscribeMessageResponse(s *SubscribeMessageResponse) (*Messa
 	return NewMessage(MessageTypeSubscribeResponse, buf.Bytes()), nil
 }
 
-func newMessageFromSubscribeMessageRequest(s *SubscribeMessageRequest) (*Message, error) {
+func NewMessageFromSubscribeMessageRequest(s *SubscribeMessageRequest) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -163,7 +164,7 @@ func newMessageFromSubscribeMessageRequest(s *SubscribeMessageRequest) (*Message
 // note to self: need to live in this package rather than func on tx
 // because it is the right layering -- messages can wrap anything
 // making a func on tx to create a message would be dependency invertion
-func newMessageFromGetBlocksRequest(s *GetBlocksRequest) (*Message, error) {
+func NewMessageFromGetBlocksRequest(s *GetBlocksRequest) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -173,7 +174,7 @@ func newMessageFromGetBlocksRequest(s *GetBlocksRequest) (*Message, error) {
 	return NewMessage(MessageTypeGetBlocksRequest, buf.Bytes()), nil
 }
 
-func newMessageFromGetBlocksResponse(s *GetBlocksResponse) (*Message, error) {
+func NewMessageFromGetBlocksResponse(s *GetBlocksResponse) (*Message, error) {
 
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(s)
@@ -181,4 +182,13 @@ func newMessageFromGetBlocksResponse(s *GetBlocksResponse) (*Message, error) {
 		return nil, fmt.Errorf("failed to convert status message request to Message: %w", err)
 	}
 	return NewMessage(MessageTypeGetBlocksResponse, buf.Bytes()), nil
+}
+
+func MessageFromRPC(rpc network.RPC) (Message, error) {
+	msg := Message{}
+	err := gob.NewDecoder(rpc.Content).Decode(&msg)
+	if err != nil {
+		return msg, fmt.Errorf("failed to extract message from rpc: %w", err)
+	}
+	return msg, nil
 }
