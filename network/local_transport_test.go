@@ -23,7 +23,7 @@ func TestConnect(t *testing.T) {
 	p := CreatePayload([]byte("hi"))
 	assert.NoError(t, tra.Send(trb.addr, p))
 
-	got := <-trb.Consume()
+	got := <-trb.Recv()
 
 	b, err := ioutil.ReadAll(got.Content)
 	assert.NoError(t, err)
@@ -44,7 +44,7 @@ func TestLocalTransport_Broadcast(t *testing.T) {
 
 	assert.NoError(t, trA.Broadcast(payload))
 
-	rpcB := <-trB.Consume()
+	rpcB := <-trB.Recv()
 	assert.Equal(t, trA.Addr(), rpcB.From)
 
 	gotB := make([]byte, len(payload.data))
@@ -55,7 +55,7 @@ func TestLocalTransport_Broadcast(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, payload.data, gotB)
 
-	rpcC := <-trC.Consume()
+	rpcC := <-trC.Recv()
 	assert.Equal(t, trA.Addr(), rpcC.From)
 	gotC, err := ioutil.ReadAll(rpcC.Content)
 	assert.NoError(t, err)

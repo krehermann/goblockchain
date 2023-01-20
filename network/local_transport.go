@@ -11,17 +11,17 @@ type LocalTransport struct {
 	addr NetAddr
 	// transport responsible for maintaining and connecting to
 	// peers, use a map to track them
-	peers     map[NetAddr]*LocalTransport
-	m         sync.RWMutex
-	consumeCh chan RPC
-	logger    *zap.Logger
+	peers  map[NetAddr]*LocalTransport
+	m      sync.RWMutex
+	recvCh chan RPC
+	logger *zap.Logger
 }
 
 func NewLocalTransport(addr NetAddr) *LocalTransport {
 	return &LocalTransport{
-		addr:      addr,
-		consumeCh: make(chan RPC, 1024),
-		peers:     make(map[NetAddr]*LocalTransport),
+		addr:   addr,
+		recvCh: make(chan RPC, 1024),
+		peers:  make(map[NetAddr]*LocalTransport),
 		// TODO functional opts
 		logger: zap.L().Named("transport").Named(string(addr)),
 	}
@@ -35,8 +35,8 @@ func (lt *LocalTransport) Get(addr NetAddr) (Transport, bool) {
 	return peer, exists
 }
 
-func (lt *LocalTransport) Consume() <-chan RPC {
-	return lt.consumeCh
+func (lt *LocalTransport) Recv() <-chan RPC {
+	return lt.recvCh
 }
 
 func (lt *LocalTransport) Broadcast(payload Payload) error {
@@ -114,7 +114,7 @@ func (lt *LocalTransport) Send(to NetAddr, payload Payload) error {
 	// field rather than the interface.
 	// the interface only support a recieve channel and can't be
 	// written to
-	peer.consumeCh <- msg
+	peer.recvCh <- msg
 
 	return nil
 }

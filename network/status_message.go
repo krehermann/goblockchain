@@ -21,6 +21,9 @@ type SubscribeMessageRequest struct {
 }
 
 type GetBlocksRequest struct {
+	RequestorID   string
+	RequestorAddr NetAddr
+
 	StartHeight uint32
 }
 

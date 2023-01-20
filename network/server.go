@@ -100,7 +100,7 @@ func (s *Server) SetLogger(l *zap.Logger) {
 }
 
 func (s *Server) receive() {
-	for rpc := range s.Transport.Consume() {
+	for rpc := range s.Transport.Recv() {
 		s.rpcChan <- rpc
 	}
 }
@@ -129,11 +129,6 @@ func (s *Server) Start(ctx context.Context) error {
 			s.runValidator(ctx)
 			s.logger.Sugar().Info("done handling validation")
 		}()
-	}
-
-	err := s.sendStartupStatusRequests()
-	if err != nil {
-		return err
 	}
 
 errorLoop:
@@ -277,26 +272,27 @@ func (s *Server) Subscribe(leader Transport) error {
 	// so that response can be handled
 	// how shut this down?
 	// TODO server consumer wait group
-	go func() {
-		s.logger.Debug("initializing subscription channel from leader",
-			zap.String("leader address", string(leader.Addr())),
-		)
-		for rpc := range leader.Consume() {
-			// we need to do something with the messages
-			// we would like to keep it simple and flexible
-			// to that end, we simply forward to a channel
-			// owned by the server
+	/*
+		go func() {
+			s.logger.Debug("initializing subscription channel from leader",
+				zap.String("leader address", string(leader.Addr())),
+			)
+			for rpc := range leader.Recv() {
+				// we need to do something with the messages
+				// we would like to keep it simple and flexible
+				// to that end, we simply forward to a channel
+				// owned by the server
 
-			//hack to handle shutdown. need to think about the right way
-			// to do this
-			if s.rpcChan == nil {
-				s.logger.Warn("rpc channel closed. aborting.")
-				break
+				//hack to handle shutdown. need to think about the right way
+				// to do this
+				if s.rpcChan == nil {
+					s.logger.Warn("rpc channel closed. aborting.")
+					break
+				}
+				s.rpcChan <- rpc
 			}
-			s.rpcChan <- rpc
-		}
-	}()
-
+		}()
+	*/
 	req := &SubscribeMessageRequest{
 		RequestorID:   s.ID,
 		RequestorAddr: s.Transport.Addr(),
