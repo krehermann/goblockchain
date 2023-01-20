@@ -1,6 +1,9 @@
-package network
+package api
 
-import "github.com/krehermann/goblockchain/core"
+import (
+	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/types"
+)
 
 type StatusMessageResponse struct {
 	ServerID      string
@@ -17,12 +20,12 @@ type SubscribeMessageResponse struct {
 
 type SubscribeMessageRequest struct {
 	RequestorID   string
-	RequestorAddr NetAddr
+	RequestorAddr types.NetAddr
 }
 
 type GetBlocksRequest struct {
 	RequestorID   string
-	RequestorAddr NetAddr
+	RequestorAddr types.NetAddr
 
 	StartHeight uint32
 }

@@ -1,30 +1,41 @@
-package network
+package server
 
 import (
 	"testing"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
+	"github.com/krehermann/goblockchain/network"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractMessageFromRPC(t *testing.T) {
-	for _, tp := range MessageTypes {
+	for _, tp := range api.MessageTypes {
 		switch tp {
-		case MessageTypeTx:
+		case api.MessageTypeTx:
 			testExtractTx(t)
 
-		case MessageTypeBlock:
+		case api.MessageTypeBlock:
 			testExtractBlock(t)
+		case api.MessageTypeGetBlocksRequest:
+			t.Logf("TODO %s", api.MessageTypeGetBlocksRequest)
+		case api.MessageTypeGetBlocksResponse:
+			t.Logf("TODO %s", api.MessageTypeGetBlocksResponse)
+		case api.MessageTypeStatusRequest:
+		case api.MessageTypeStatusResponse:
+		case api.MessageTypeSubscribeRequest:
+		case api.MessageTypeSubscribeResponse:
 		default:
-			assert.Fail(t, "unimplemented test for message type '%s'", tp.String())
+			assert.Failf(t, "unimplemented test for message type '%s'", tp.String())
 		}
 	}
 }
 
 func testExtractTx(t *testing.T) {
 	tx := core.NewTransaction([]byte("tx"))
-	msg, err := newMessageFromTransaction(tx)
+	msg, err := api.NewMessageFromTransaction(tx)
 	assert.NoError(t, err)
 
 	rpc := messageToRpc(t, msg)
@@ -46,7 +57,7 @@ func testExtractBlock(t *testing.T) {
 		[]*core.Transaction{core.NewTransaction([]byte("junk"))},
 	)
 
-	msg, err := newMessageFromBlock(b)
+	msg, err := api.NewMessageFromBlock(b)
 	assert.NoError(t, err)
 
 	rpc := messageToRpc(t, msg)
@@ -59,12 +70,12 @@ func testExtractBlock(t *testing.T) {
 	assert.Equal(t, b, got)
 }
 
-func messageToRpc(t *testing.T, msg *Message) RPC {
+func messageToRpc(t *testing.T, msg *api.Message) network.RPC {
 	d, err := msg.Bytes()
 	assert.NoError(t, err)
-	payload := CreatePayload(d)
+	payload := network.CreatePayload(d)
 
-	return RPC{
+	return network.RPC{
 		From:    "test-sender",
 		Content: payload.Reader(),
 	}

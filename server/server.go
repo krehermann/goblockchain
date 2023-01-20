@@ -1,4 +1,4 @@
-package network
+package server
 
 import (
 	"context"
@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
+	"github.com/krehermann/goblockchain/network"
 	"github.com/krehermann/goblockchain/types"
 	"go.uber.org/zap"
 )
@@ -23,15 +25,15 @@ type Peers struct {
 }
 type ServerOpts struct {
 	ID        string
-	Transport Transport
+	Transport network.Transport
 	// multiple transport layers
-	PeerTransports []Transport
+	PeerTransports []network.Transport
 	PrivateKey     crypto.PrivateKey
 	BlockTime      time.Duration
 	TxHasher       core.Hasher[*core.Transaction]
 	Logger         *zap.Logger
-	RPCDecodeFunc  RPCDecodeFunc
-	RPCProcessor   RPCProcessor
+	RPCDecodeFunc  network.RPCDecodeFunc
+	RPCProcessor   network.RPCProcessor
 	Blockchain     *core.Blockchain
 }
 
@@ -43,7 +45,7 @@ type Server struct {
 	blockTime   time.Duration
 	mempool     *TxPool
 	isValidator bool
-	rpcChan     chan RPC
+	rpcChan     chan network.RPC
 	quitChan    chan struct{}
 	logger      *zap.Logger
 	errChan     chan error
@@ -61,7 +63,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		opts.BlockTime = defaultBlockTime
 	}
 	if opts.RPCDecodeFunc == nil {
-		opts.RPCDecodeFunc = ExtractMessageFromRPC
+		opts.RPCDecodeFunc = ExtractMessageFromRPC //ExtractMessageFromRPC
 	}
 	if opts.ID == "" {
 		opts.ID = strconv.FormatInt(int64(rand.Intn(1000)), 10)
@@ -81,7 +83,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		mempool:     NewTxPool(WithLogger(opts.Logger)),
 		blockTime:   opts.BlockTime,
 		isValidator: !opts.PrivateKey.IsZero(),
-		rpcChan:     make(chan RPC),
+		rpcChan:     make(chan network.RPC),
 		quitChan:    make(chan struct{}, 1),
 		logger:      opts.Logger.Named("server"),
 		errChan:     make(chan error, 1),
@@ -158,53 +160,53 @@ errorLoop:
 }
 
 // implement RPCProcessor interface
-func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
+func (s *Server) ProcessMessage(dmsg *network.DecodedMessage) error {
 	switch t := dmsg.Data.(type) {
 
 	case *core.Transaction:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeTx.String()),
+			zap.String("type", api.MessageTypeTx.String()),
 			zap.String("from", string(dmsg.From)))
 
 		return s.handleTransaction(t)
 	case *core.Block:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeBlock.String()),
+			zap.String("type", api.MessageTypeBlock.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleBlock(t)
-	case *StatusMessageRequest:
+	case *api.StatusMessageRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeStatusRequest.String()),
+			zap.String("type", api.MessageTypeStatusRequest.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleStatusMessageRequest(t)
 
-	case *StatusMessageResponse:
+	case *api.StatusMessageResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeStatusResponse.String()),
+			zap.String("type", api.MessageTypeStatusResponse.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleStatusMessageResponse(t)
 
-	case *SubscribeMessageRequest:
+	case *api.SubscribeMessageRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeSubscribeRequest.String()),
+			zap.String("type", api.MessageTypeSubscribeRequest.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleSubscribeMessageRequest(t)
 
-	case *SubscribeMessageResponse:
+	case *api.SubscribeMessageResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeSubscribeResponse.String()),
+			zap.String("type", api.MessageTypeSubscribeResponse.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleSubscribeMessageResponse(t)
 
-	case *GetBlocksRequest:
+	case *api.GetBlocksRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeGetBlocksRequest.String()),
+			zap.String("type", api.MessageTypeGetBlocksRequest.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleGetBlocksRequest(t)
 
-	case *GetBlocksResponse:
+	case *api.GetBlocksResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", MessageTypeGetBlocksResponse.String()),
+			zap.String("type", api.MessageTypeGetBlocksResponse.String()),
 			zap.String("from", string(dmsg.From)))
 		return s.handleGetBlocksResponse(t)
 
@@ -219,7 +221,7 @@ func (s *Server) ProcessMessage(dmsg *DecodedMessage) error {
 
 // setup connection bi-directional connect
 // in the transports in s and the inputs
-func (s *Server) Connect(strangers ...Transport) error {
+func (s *Server) Connect(strangers ...network.Transport) error {
 	for _, pt := range strangers {
 		s.logger.Info("connect",
 			zap.Any("from", s.Transport.Addr()),
@@ -260,7 +262,7 @@ func (s *Server) Join(peer *Server) error {
 
 // add s to leader's peers
 // subscribe might be cleaner in the transport layer, analog to consume
-func (s *Server) Subscribe(leader Transport) error {
+func (s *Server) Subscribe(leader network.Transport) error {
 	s.logger.Info("subscribe",
 		zap.String("to", string(leader.Addr())),
 		zap.String("subscriber", string(s.Transport.Addr())),
@@ -293,12 +295,12 @@ func (s *Server) Subscribe(leader Transport) error {
 			}
 		}()
 	*/
-	req := &SubscribeMessageRequest{
+	req := &api.SubscribeMessageRequest{
 		RequestorID:   s.ID,
 		RequestorAddr: s.Transport.Addr(),
 	}
 
-	msg, err := newMessageFromSubscribeMessageRequest(req)
+	msg, err := api.NewMessageFromSubscribeMessageRequest(req)
 	if err != nil {
 		return err
 	}

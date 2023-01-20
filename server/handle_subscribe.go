@@ -1,12 +1,13 @@
-package network
+package server
 
 import (
 	"fmt"
 
+	"github.com/krehermann/goblockchain/api"
 	"go.uber.org/zap"
 )
 
-func (s *Server) handleSubscribeMessageRequest(smsg *SubscribeMessageRequest) error {
+func (s *Server) handleSubscribeMessageRequest(smsg *api.SubscribeMessageRequest) error {
 	s.logger.Info("handleSubscribeMessageRequest",
 		zap.Any("status", smsg),
 	)
@@ -19,7 +20,7 @@ func (s *Server) handleSubscribeMessageRequest(smsg *SubscribeMessageRequest) er
 
 	s.PeerTransports = append(s.PeerTransports, tr)
 
-	resp, err := newMessageFromSubscribeMessageResponse(new(SubscribeMessageResponse))
+	resp, err := api.NewMessageFromSubscribeMessageResponse(new(api.SubscribeMessageResponse))
 	if err != nil {
 		return err
 	}
@@ -27,7 +28,7 @@ func (s *Server) handleSubscribeMessageRequest(smsg *SubscribeMessageRequest) er
 	return s.send(tr.Addr(), resp)
 }
 
-func (s *Server) handleSubscribeMessageResponse(smsg *SubscribeMessageResponse) error {
+func (s *Server) handleSubscribeMessageResponse(smsg *api.SubscribeMessageResponse) error {
 	s.logger.Info("handleStatusMessageResponse",
 		zap.Any("subscribed to", smsg),
 	)

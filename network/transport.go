@@ -3,19 +3,19 @@ package network
 import (
 	"bytes"
 	"io"
-)
 
-type NetAddr string
+	"github.com/krehermann/goblockchain/types"
+)
 
 // module in Transport
 type Transport interface {
 	Recv() <-chan RPC
 
 	Connect(Transport) error
-	Send(NetAddr, Payload) error
-	Addr() NetAddr
+	Send(types.NetAddr, Payload) error
+	Addr() types.NetAddr
 
-	Get(NetAddr) (Transport, bool)
+	Get(types.NetAddr) (Transport, bool)
 	// transport is agnostic to the types in the payload
 	Broadcast(payload Payload) error
 }

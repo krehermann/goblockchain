@@ -7,9 +7,11 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/server"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 )
@@ -86,9 +88,9 @@ func main() {
 	}
 }
 
-func initRemoteServers(ctx context.Context, trs ...network.Transport) []*network.Server {
+func initRemoteServers(ctx context.Context, trs ...network.Transport) []*server.Server {
 	zap.L().Info("initRemoteServers")
-	out := make([]*network.Server, 0)
+	out := make([]*server.Server, 0)
 	ctx, cancelFunc := context.WithCancel(ctx)
 	for i, tr := range trs {
 		s := mustMakeServer(makeNonValidatorOpts(
@@ -102,24 +104,24 @@ func initRemoteServers(ctx context.Context, trs ...network.Transport) []*network
 	return out
 }
 
-func mustMakeServer(opts network.ServerOpts) *network.Server {
-	s, err := network.NewServer(opts)
+func mustMakeServer(opts server.ServerOpts) *server.Server {
+	s, err := server.NewServer(opts)
 	fatalIfErr(nil, err)
 
 	return s
 }
 
-func makeValidatorOpts(id string, tr network.Transport) network.ServerOpts {
+func makeValidatorOpts(id string, tr network.Transport) server.ServerOpts {
 	privKey := crypto.MustGeneratePrivateKey()
-	return network.ServerOpts{
+	return server.ServerOpts{
 		PrivateKey: privKey,
 		ID:         id,
 		Transport:  tr,
 	}
 }
 
-func makeNonValidatorOpts(id string, tr network.Transport) network.ServerOpts {
-	return network.ServerOpts{
+func makeNonValidatorOpts(id string, tr network.Transport) server.ServerOpts {
+	return server.ServerOpts{
 		ID:        id,
 		Transport: tr,
 	}
@@ -145,7 +147,7 @@ func sendRandomTransaction(from, to network.Transport) error {
 	if err != nil {
 		return err
 	}
-	msg := network.NewMessage(network.MessageTypeTx, txEncoded.Bytes())
+	msg := api.NewMessage(api.MessageTypeTx, txEncoded.Bytes())
 	d, err := msg.Bytes()
 	if err != nil {
 		return err

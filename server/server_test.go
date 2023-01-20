@@ -1,4 +1,4 @@
-package network
+package server
 
 import (
 	"bytes"
@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
+	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/types"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 
@@ -99,7 +102,7 @@ func TestNetwork(t *testing.T) {
 	}
 }
 
-func (n *network) runFor(nBlocks int, cancel context.CancelFunc) {
+func (n *testNetwork) runFor(nBlocks int, cancel context.CancelFunc) {
 	x := 1.5 * float64(nBlocks)
 	msec := float64(n.blockTime.Milliseconds())
 	sleepMill := x * msec
@@ -114,7 +117,7 @@ func (n *network) runFor(nBlocks int, cancel context.CancelFunc) {
 	zap.L().Sugar().Info("NETWORK SHUTDOWN")
 }
 
-func (n *network) addPeer(from, to *Server) {
+func (n *testNetwork) addPeer(from, to *Server) {
 	zap.L().Info("networking adding peer",
 		zap.String("from", from.ID),
 		zap.String("to", to.ID),
@@ -138,7 +141,7 @@ func (t *topology) connect(from, to string) {
 	t.connections[from] = conns
 }
 
-type network struct {
+type testNetwork struct {
 	t         *testing.T
 	Servers   map[string]*Server
 	ctx       context.Context
@@ -152,9 +155,9 @@ func newNetwork(t *testing.T,
 	ctx context.Context,
 	blockTime time.Duration,
 	logger *zap.Logger,
-	servers ...*Server) *network {
+	servers ...*Server) *testNetwork {
 
-	n := &network{
+	n := &testNetwork{
 		t:         t,
 		ctx:       ctx,
 		logger:    logger.Named("network"),
@@ -166,11 +169,11 @@ func newNetwork(t *testing.T,
 	return n
 }
 
-func (n *network) setTopology(t *topology) {
+func (n *testNetwork) setTopology(t *topology) {
 	n.toplgy = t
 }
 
-func (n *network) connectAll() {
+func (n *testNetwork) connectAll() {
 	require.NotNil(n.t, n.toplgy, "network has no toplogy")
 	require.NotNil(n.t, n.Servers, "network has no servers")
 
@@ -180,7 +183,7 @@ func (n *network) connectAll() {
 
 }
 
-func (n *network) initializeConnections(s *Server) {
+func (n *testNetwork) initializeConnections(s *Server) {
 	fromServer, exists := n.Servers[s.ID]
 	peerIds := n.toplgy.connections[s.ID]
 	require.True(n.t, exists, "server id %s in topology but not in network", fromServer.ID)
@@ -196,7 +199,7 @@ func (n *network) initializeConnections(s *Server) {
 	}
 }
 
-func (n *network) startServer(s *Server) {
+func (n *testNetwork) startServer(s *Server) {
 	n.t.Logf("test network starting %s", s.ID)
 	n.wg.Add(1)
 	go func(s *Server) {
@@ -207,7 +210,7 @@ func (n *network) startServer(s *Server) {
 	}(s)
 }
 
-func (n *network) startServers() {
+func (n *testNetwork) startServers() {
 
 	for _, server := range n.Servers {
 		n.startServer(server)
@@ -218,7 +221,7 @@ func (n *network) startServers() {
 	}
 }
 
-func (n *network) register(servers ...*Server) {
+func (n *testNetwork) register(servers ...*Server) {
 	n.logger.Sugar().Debugf("network register %d", len(servers))
 
 	for _, s := range servers {
@@ -232,7 +235,7 @@ func (n *network) register(servers ...*Server) {
 
 func generateValidator(t *testing.T, l *zap.Logger, id string) *Server {
 	// TODO hook for non-local transport
-	tr := NewLocalTransport(NetAddr(id))
+	tr := network.NewLocalTransport(types.NetAddr(id))
 	opts := makeValidatorOpts(id, tr)
 	opts.Logger = l
 	return mustMakeServer(t, opts)
@@ -247,7 +250,7 @@ func generateNonValidators(t *testing.T, l *zap.Logger, ids ...string) []*Server
 		if i > 0 && id == ids[i-1] {
 			continue
 		}
-		tr := NewLocalTransport(NetAddr(id))
+		tr := network.NewLocalTransport(types.NetAddr(id))
 		opts := makeNonValidatorOpts(id, tr)
 		opts.Logger = l
 
@@ -263,7 +266,7 @@ func mustMakeServer(t *testing.T, opts ServerOpts) *Server {
 	return s
 }
 
-func makeValidatorOpts(id string, tr Transport) ServerOpts {
+func makeValidatorOpts(id string, tr network.Transport) ServerOpts {
 	privKey := crypto.MustGeneratePrivateKey()
 	return ServerOpts{
 		PrivateKey: privKey,
@@ -273,7 +276,7 @@ func makeValidatorOpts(id string, tr Transport) ServerOpts {
 	}
 }
 
-func makeNonValidatorOpts(id string, tr Transport) ServerOpts {
+func makeNonValidatorOpts(id string, tr network.Transport) ServerOpts {
 	return ServerOpts{
 		ID:        id,
 		Transport: tr,
@@ -282,7 +285,7 @@ func makeNonValidatorOpts(id string, tr Transport) ServerOpts {
 }
 
 // helper for testing. remove later
-func sendRandomTransaction(from, to Transport) error {
+func sendRandomTransaction(from, to network.Transport) error {
 	privKey := crypto.MustGeneratePrivateKey()
 
 	tx := transactionAdder()
@@ -296,12 +299,12 @@ func sendRandomTransaction(from, to Transport) error {
 	if err != nil {
 		return err
 	}
-	msg := NewMessage(MessageTypeTx, txEncoded.Bytes())
+	msg := api.NewMessage(api.MessageTypeTx, txEncoded.Bytes())
 	d, err := msg.Bytes()
 	if err != nil {
 		return err
 	}
-	payload := CreatePayload(d)
+	payload := network.CreatePayload(d)
 	return from.Send(to.Addr(), payload)
 
 }
