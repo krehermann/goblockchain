@@ -33,8 +33,8 @@ func main() {
 	ctx := context.Background()
 	ctx, cancelFunc := context.WithCancel(ctx)
 
-	local := network.NewLocalTransport("local")
-	peer0 := network.NewLocalTransport("peer0")
+	local := network.NewLocalTransport(network.LocalAddr("local"))
+	peer0 := network.NewLocalTransport(network.LocalAddr("peer0"))
 	// peer1 := network.NewLocalTransport("peer1")
 	// peer2 := network.NewLocalTransport("peer2")
 	remotes := initRemoteServers(ctx, peer0)

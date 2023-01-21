@@ -4,20 +4,19 @@ import (
 	"bytes"
 	"encoding/gob"
 	"io"
-
-	"github.com/krehermann/goblockchain/types"
+	"net"
 )
 
 type RPC struct {
 	// message sent over transport layer
-	From types.NetAddr
+	From net.Addr
 	// this is totally generic
 	Content io.Reader
 }
 
 // generic deserialization for consuming RPCs
 type DecodedMessage struct {
-	From types.NetAddr
+	From net.Addr
 	// this is generic because the transport layer can send anything
 	Data any
 }

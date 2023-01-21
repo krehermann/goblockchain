@@ -166,54 +166,54 @@ func (s *Server) ProcessMessage(dmsg *network.DecodedMessage) error {
 	case *core.Transaction:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeTx.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 
 		return s.handleTransaction(t)
 	case *core.Block:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeBlock.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleBlock(t)
 	case *api.StatusMessageRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeStatusRequest.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleStatusMessageRequest(t)
 
 	case *api.StatusMessageResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeStatusResponse.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleStatusMessageResponse(t)
 
 	case *api.SubscribeMessageRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeSubscribeRequest.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleSubscribeMessageRequest(t)
 
 	case *api.SubscribeMessageResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeSubscribeResponse.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleSubscribeMessageResponse(t)
 
 	case *api.GetBlocksRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeGetBlocksRequest.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleGetBlocksRequest(t)
 
 	case *api.GetBlocksResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeGetBlocksResponse.String()),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 		return s.handleGetBlocksResponse(t)
 
 	default:
 		s.logger.Info("ProcessMessage",
 			zap.Any("type", t),
-			zap.String("from", string(dmsg.From)))
+			zap.String("from", dmsg.From.String()))
 
 		return fmt.Errorf("invalid decoded message %v", t)
 	}
@@ -264,37 +264,10 @@ func (s *Server) Join(peer *Server) error {
 // subscribe might be cleaner in the transport layer, analog to consume
 func (s *Server) Subscribe(leader network.Transport) error {
 	s.logger.Info("subscribe",
-		zap.String("to", string(leader.Addr())),
-		zap.String("subscriber", string(s.Transport.Addr())),
+		zap.String("to", leader.Addr().String()),
+		zap.String("subscriber", s.Transport.Addr().String()),
 	)
 
-	//s.PeerTransports = append(s.PeerTransports, leader)
-
-	// hacky. need to setup up an rpc consume from the leader
-	// so that response can be handled
-	// how shut this down?
-	// TODO server consumer wait group
-	/*
-		go func() {
-			s.logger.Debug("initializing subscription channel from leader",
-				zap.String("leader address", string(leader.Addr())),
-			)
-			for rpc := range leader.Recv() {
-				// we need to do something with the messages
-				// we would like to keep it simple and flexible
-				// to that end, we simply forward to a channel
-				// owned by the server
-
-				//hack to handle shutdown. need to think about the right way
-				// to do this
-				if s.rpcChan == nil {
-					s.logger.Warn("rpc channel closed. aborting.")
-					break
-				}
-				s.rpcChan <- rpc
-			}
-		}()
-	*/
 	req := &api.SubscribeMessageRequest{
 		RequestorID:   s.ID,
 		RequestorAddr: s.Transport.Addr(),
@@ -309,35 +282,6 @@ func (s *Server) Subscribe(leader network.Transport) error {
 
 }
 
-/*
-// func (s *Server) Add
-
-	func (s *Server) initTransports() {
-		// make each transport listen for messages
-		for _, tr := range s.PeerTransports {
-			go func(tr Transport) {
-				s.logger.Debug("initializing consumer for peer",
-					zap.String("peer address", string(tr.Addr())),
-				)
-				for rpc := range tr.Consume() {
-					// we need to do something with the messages
-					// we would like to keep it simple and flexible
-					// to that end, we simply forward to a channel
-					// owned by the server
-
-					//hack to handle shutdown. need to think about the right way
-					// to do this
-					if s.rpcChan == nil {
-						s.logger.Warn("rpc channel closed. aborting.")
-						break
-					}
-					s.rpcChan <- rpc
-				}
-			}(tr)
-
-		}
-	}
-*/
 func createGenesis() *core.Block {
 	h := &core.Header{
 		Version:   1,

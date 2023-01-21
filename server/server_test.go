@@ -14,7 +14,6 @@ import (
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
-	"github.com/krehermann/goblockchain/types"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 
@@ -235,7 +234,7 @@ func (n *testNetwork) register(servers ...*Server) {
 
 func generateValidator(t *testing.T, l *zap.Logger, id string) *Server {
 	// TODO hook for non-local transport
-	tr := network.NewLocalTransport(types.NetAddr(id))
+	tr := network.NewLocalTransport(network.LocalAddr(id))
 	opts := makeValidatorOpts(id, tr)
 	opts.Logger = l
 	return mustMakeServer(t, opts)
@@ -250,7 +249,7 @@ func generateNonValidators(t *testing.T, l *zap.Logger, ids ...string) []*Server
 		if i > 0 && id == ids[i-1] {
 			continue
 		}
-		tr := network.NewLocalTransport(types.NetAddr(id))
+		tr := network.NewLocalTransport(network.LocalAddr(id))
 		opts := makeNonValidatorOpts(id, tr)
 		opts.Logger = l
 
