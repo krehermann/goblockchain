@@ -1,7 +1,11 @@
+package network
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
+	"sync"
 
 	"go.uber.org/zap"
 )
@@ -12,8 +16,11 @@ type TcpTransport struct {
 
 	listener net.Listener
 	net.Conn
+
+	lock        sync.RWMutex
 	connections map[net.Addr]net.Conn
-	errCh       chan error
+
+	recv chan RPC
 }
 
 type TcpTransportOpt func(t *TcpTransport) *TcpTransport
@@ -29,8 +36,9 @@ func NewTcpTransport(addr net.Addr, opts ...TcpTransportOpt) (*TcpTransport, err
 	t := &TcpTransport{
 		addr:        addr,
 		logger:      zap.L(),
+		lock:        sync.RWMutex{},
 		connections: make(map[net.Addr]net.Conn),
-		errCh:       make(chan error),
+		recv:        make(chan RPC, 1024),
 	}
 
 	for _, opt := range opts {
@@ -47,19 +55,112 @@ func NewTcpTransport(addr net.Addr, opts ...TcpTransportOpt) (*TcpTransport, err
 	return t, nil
 }
 
+func (t *TcpTransport) Recv() <-chan RPC {
+	return t.recv
+}
+
+func (t *TcpTransport) Get(addr net.Addr) (Transport, bool) {
+	return nil, false
+}
+func (t *TcpTransport) Connect(o Transport) error {
+	// has to be a tcp partner
+	tcpPartner := o.(*TcpTransport)
+
+	conn, err := net.Dial(o.Addr().Network(), o.Addr().String())
+	if err != nil {
+		return err
+	}
+
+	t.lock.Lock()
+	_, exists := t.connections[tcpPartner.Addr()]
+	if !exists {
+		t.connections[tcpPartner.Addr()] = conn
+	}
+	t.lock.Unlock()
+
+	return nil
+}
+
+func (t *TcpTransport) Broadcast(p Payload) error {
+	panic("wtf")
+}
+
+func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
+	t.logger.Debug("send message",
+		zap.String("from", string(t.addr.String())),
+		zap.String("to", string(to.String())),
+		zap.Int("msg length", len(payload.data)),
+	)
+
+	t.lock.RLock()
+	peer, exists := t.connections[to]
+	t.lock.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("%s unknown peer %s", t.addr, to)
+	}
+
+	// need loop?
+	n, err := peer.Write(payload.data)
+	if err != nil {
+		return err
+	}
+	if n != len(payload.data) {
+		return fmt.Errorf("corrupt write len %d != %d", n, len(payload.data))
+	}
+
+	return nil
+
+}
+
+func (t *TcpTransport) read(c net.Conn) {
+	for {
+
+		var buf bytes.Buffer
+		_, err := io.Copy(&buf, c)
+		if err != nil {
+			t.logger.Error("reading from conn",
+				zap.Any("conn", c),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		// convert to our rpc message type and custom rpc format
+		addr, err := addrOf(c)
+		if err != nil {
+			t.logger.Error("read",
+				zap.Error(err))
+			continue
+		}
+		rpc := RPC{
+			From:    addr,
+			Content: bytes.NewReader(buf.Bytes()),
+		}
+
+		t.recv <- rpc
+	}
+
+}
+
+func (t *TcpTransport) Addr() net.Addr {
+	return t.addr
+}
+
 func (t *TcpTransport) listen() {
+
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {
-			t.errCh <- err
-			continue
+			t.logger.Error("accept error", zap.Error(err))
 		}
 		id, err := addrOf(conn)
 		if err != nil {
-			t.errCh <- err
-			continue
+			t.logger.Error("accept error", zap.Error(err))
 		}
 		t.connections[id] = conn
+		go t.read(conn)
+
 	}
 }
 

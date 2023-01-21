@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/network"
-	"github.com/krehermann/goblockchain/types"
 	"go.uber.org/zap"
 )
 
@@ -144,7 +144,7 @@ func (s *Server) broadcast(msg *api.Message) error {
 	return nil
 }
 
-func (s *Server) send(addr types.NetAddr, msg *api.Message) error {
+func (s *Server) send(addr net.Addr, msg *api.Message) error {
 	data, err := msg.Bytes()
 	if err != nil {
 		return err

@@ -10,15 +10,20 @@ import (
 func TestConnect(t *testing.T) {
 	assert.Equal(t, 1, 1)
 
-	tra := NewLocalTransport("A")
-	trb := NewLocalTransport("B")
+	tra := NewLocalTransport(LocalAddr("A"))
+	trb := NewLocalTransport(LocalAddr("B"))
 
 	err := tra.Connect(trb)
 	assert.NoError(t, err)
 	//assert.NoError(t, trb.Connect(tra))
 
-	assert.Equal(t, tra.peers[trb.addr], trb)
-	assert.Equal(t, trb.peers[tra.addr], tra)
+	gotB, exists := tra.Get(trb.Addr())
+	assert.True(t, exists)
+	assert.Equal(t, trb, gotB)
+
+	gotA, exists := trb.Get(tra.Addr())
+	assert.True(t, exists)
+	assert.Equal(t, tra, gotA)
 
 	p := CreatePayload([]byte("hi"))
 	assert.NoError(t, tra.Send(trb.addr, p))
@@ -34,9 +39,9 @@ func TestConnect(t *testing.T) {
 
 func TestLocalTransport_Broadcast(t *testing.T) {
 
-	trA := NewLocalTransport("a")
-	trB := NewLocalTransport("b")
-	trC := NewLocalTransport("c")
+	trA := NewLocalTransport(LocalAddr("a"))
+	trB := NewLocalTransport(LocalAddr("b"))
+	trC := NewLocalTransport(LocalAddr("c"))
 
 	trA.Connect(trB)
 	trA.Connect(trC)
