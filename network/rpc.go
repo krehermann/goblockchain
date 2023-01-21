@@ -4,19 +4,19 @@ import (
 	"bytes"
 	"encoding/gob"
 	"io"
-	"net"
 )
 
 type RPC struct {
 	// message sent over transport layer
-	From net.Addr
+	//	From net.Addr
+	From string
 	// this is totally generic
 	Content io.Reader
 }
 
 // generic deserialization for consuming RPCs
 type DecodedMessage struct {
-	From net.Addr
+	From string
 	// this is generic because the transport layer can send anything
 	Data any
 }

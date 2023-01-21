@@ -14,9 +14,7 @@ type Transport interface {
 	Send(net.Addr, Payload) error
 	Addr() net.Addr
 
-	Get(net.Addr) (Transport, bool)
-	// transport is agnostic to the types in the payload
-	Broadcast(payload Payload) error
+	IsConnected(net.Addr) bool
 }
 
 type Payload struct {

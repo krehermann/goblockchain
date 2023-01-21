@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math/rand"
+	"net"
 	"sync"
 
 	"fmt"
@@ -27,14 +28,14 @@ type ServerOpts struct {
 	ID        string
 	Transport network.Transport
 	// multiple transport layers
-	PeerTransports []network.Transport
-	PrivateKey     crypto.PrivateKey
-	BlockTime      time.Duration
-	TxHasher       core.Hasher[*core.Transaction]
-	Logger         *zap.Logger
-	RPCDecodeFunc  network.RPCDecodeFunc
-	RPCProcessor   network.RPCProcessor
-	Blockchain     *core.Blockchain
+	Peers         []net.Addr
+	PrivateKey    crypto.PrivateKey
+	BlockTime     time.Duration
+	TxHasher      core.Hasher[*core.Transaction]
+	Logger        *zap.Logger
+	RPCDecodeFunc network.RPCDecodeFunc
+	RPCProcessor  network.RPCProcessor
+	Blockchain    *core.Blockchain
 }
 
 type Server struct {
@@ -166,54 +167,54 @@ func (s *Server) ProcessMessage(dmsg *network.DecodedMessage) error {
 	case *core.Transaction:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeTx.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 
 		return s.handleTransaction(t)
 	case *core.Block:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeBlock.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleBlock(t)
 	case *api.StatusMessageRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeStatusRequest.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleStatusMessageRequest(t)
 
 	case *api.StatusMessageResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeStatusResponse.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleStatusMessageResponse(t)
 
 	case *api.SubscribeMessageRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeSubscribeRequest.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleSubscribeMessageRequest(t)
 
 	case *api.SubscribeMessageResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeSubscribeResponse.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleSubscribeMessageResponse(t)
 
 	case *api.GetBlocksRequest:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeGetBlocksRequest.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleGetBlocksRequest(t)
 
 	case *api.GetBlocksResponse:
 		s.logger.Info("ProcessMessage",
 			zap.String("type", api.MessageTypeGetBlocksResponse.String()),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 		return s.handleGetBlocksResponse(t)
 
 	default:
 		s.logger.Info("ProcessMessage",
 			zap.Any("type", t),
-			zap.String("from", dmsg.From.String()))
+			zap.String("from", dmsg.From))
 
 		return fmt.Errorf("invalid decoded message %v", t)
 	}
