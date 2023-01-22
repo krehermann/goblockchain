@@ -1,17 +1,9 @@
 package core
 
 import (
-	"crypto/elliptic"
 	"encoding/gob"
 	"io"
 )
-
-func init() {
-	// ensure the that gob can handle the all the dependencies
-	// in our transactions
-	gob.Register(elliptic.P256())
-
-}
 
 type Encoder[T any] interface {
 	Encode(T) error
