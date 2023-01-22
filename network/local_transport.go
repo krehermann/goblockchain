@@ -45,6 +45,8 @@ func (lt *LocalTransport) IsConnected(addr net.Addr) bool {
 	lt.logger.Info("Get",
 		zap.Any("want", addr),
 		zap.Any("have", lt.peers))
+	lt.m.RLock()
+	defer lt.m.RUnlock()
 	_, exists := lt.peers[addr.(LocalAddr)]
 	return exists
 }
@@ -68,13 +70,7 @@ func (lt *LocalTransport) Connect(tr Transport) error {
 		zap.Any("other has", localTr.peers),
 	)
 
-	skip := func() bool {
-		lt.m.RLock()
-		defer lt.m.RUnlock()
-		_, exists := lt.peers[tr.Addr().(LocalAddr)]
-		return exists
-	}
-	if skip() {
+	if lt.IsConnected(tr.Addr()) {
 		lt.logger.Named("localtransport").Info("skipping existing connection")
 
 		return nil
