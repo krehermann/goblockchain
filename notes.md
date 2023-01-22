@@ -48,7 +48,7 @@ parallel implemenation, and especially subbing our the tests, which lead to a lo
 
 
 
-# Implement TCP transport
+Implement TCP transport
 
 The big learning lesson is that we fucked up the initial transport design.
 
