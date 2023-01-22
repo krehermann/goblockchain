@@ -13,19 +13,19 @@ func (s *Server) handleSubscribeMessageRequest(smsg *api.SubscribeMessageRequest
 	)
 
 	// add the requestor to my peers
-	tr, exists := s.Transport.Get(smsg.RequestorAddr)
+	exists := s.Transport.IsConnected(smsg.RequestorAddr)
 	if !exists {
 		return fmt.Errorf("subscription request from ghost connection %+v", smsg)
 	}
 
-	s.PeerTransports = append(s.PeerTransports, tr)
+	s.Peers = append(s.Peers, smsg.RequestorAddr)
 
 	resp, err := api.NewMessageFromSubscribeMessageResponse(new(api.SubscribeMessageResponse))
 	if err != nil {
 		return err
 	}
 
-	return s.send(tr.Addr(), resp)
+	return s.send(smsg.RequestorAddr, resp)
 }
 
 func (s *Server) handleSubscribeMessageResponse(smsg *api.SubscribeMessageResponse) error {

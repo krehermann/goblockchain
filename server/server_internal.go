@@ -132,11 +132,11 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcast(msg *api.Message) error {
-	if len(s.PeerTransports) == 0 {
+	if len(s.Peers) == 0 {
 		s.logger.Warn("broadcasting without peers")
 	}
-	for _, peer := range s.PeerTransports {
-		err := s.send(peer.Addr(), msg)
+	for _, peer := range s.Peers {
+		err := s.send(peer, msg)
 		if err != nil {
 			return err
 		}

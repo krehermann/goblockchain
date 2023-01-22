@@ -76,7 +76,7 @@ func messageToRpc(t *testing.T, msg *api.Message) network.RPC {
 	payload := network.CreatePayload(d)
 
 	return network.RPC{
-		From:    network.LocalAddr("test-sender"),
+		From:    network.LocalAddr("test-sender").String(),
 		Content: payload.Reader(),
 	}
 }

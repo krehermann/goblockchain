@@ -1,7 +1,9 @@
 package network
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -18,7 +20,7 @@ type TcpTransport struct {
 	net.Conn
 
 	lock        sync.RWMutex
-	connections map[net.Addr]net.Conn
+	connections map[string]net.Conn
 
 	recv chan RPC
 }
@@ -37,7 +39,7 @@ func NewTcpTransport(addr net.Addr, opts ...TcpTransportOpt) (*TcpTransport, err
 		addr:        addr,
 		logger:      zap.L(),
 		lock:        sync.RWMutex{},
-		connections: make(map[net.Addr]net.Conn),
+		connections: make(map[string]net.Conn),
 		recv:        make(chan RPC, 1024),
 	}
 
@@ -59,12 +61,20 @@ func (t *TcpTransport) Recv() <-chan RPC {
 	return t.recv
 }
 
-func (t *TcpTransport) Get(addr net.Addr) (Transport, bool) {
-	return nil, false
+func (t *TcpTransport) IsConnected(addr net.Addr) bool {
+	t.lock.RLock()
+	_, exists := t.connections[addr.String()]
+	t.lock.RUnlock()
+	//return peer, exists
+	return exists
 }
 func (t *TcpTransport) Connect(o Transport) error {
 	// has to be a tcp partner
 	tcpPartner := o.(*TcpTransport)
+	t.logger.Info("connect",
+		zap.Any("from", t),
+		zap.Any("to", o),
+	)
 
 	conn, err := net.Dial(o.Addr().Network(), o.Addr().String())
 	if err != nil {
@@ -72,17 +82,13 @@ func (t *TcpTransport) Connect(o Transport) error {
 	}
 
 	t.lock.Lock()
-	_, exists := t.connections[tcpPartner.Addr()]
+	_, exists := t.connections[tcpPartner.Addr().String()]
 	if !exists {
-		t.connections[tcpPartner.Addr()] = conn
+		t.connections[tcpPartner.Addr().String()] = conn
 	}
 	t.lock.Unlock()
 
 	return nil
-}
-
-func (t *TcpTransport) Broadcast(p Payload) error {
-	panic("wtf")
 }
 
 func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
@@ -93,14 +99,45 @@ func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
 	)
 
 	t.lock.RLock()
-	peer, exists := t.connections[to]
+	peer, exists := t.connections[to.String()]
 	t.lock.RUnlock()
 
 	if !exists {
 		return fmt.Errorf("%s unknown peer %s", t.addr, to)
 	}
 
-	// need loop?
+	// send length
+	bs := make([]byte, 4)
+
+	id := []byte(t.addr.String())
+	msgLen := len(id) + 4 + len(payload.data) + 4
+
+	// write entire message length
+	binary.LittleEndian.PutUint32(bs, uint32(msgLen))
+	_, err := peer.Write(bs)
+	if err != nil {
+		return err
+	}
+
+	// write length of id
+	binary.LittleEndian.PutUint32(bs, uint32(len(id)))
+	_, err = peer.Write(bs)
+	if err != nil {
+		return err
+	}
+
+	_, err = peer.Write(id)
+	if err != nil {
+		return err
+	}
+
+	// write length of id
+	binary.LittleEndian.PutUint32(bs, uint32(len(payload.data)))
+	_, err = peer.Write(bs)
+	if err != nil {
+		return err
+	}
+
 	n, err := peer.Write(payload.data)
 	if err != nil {
 		return err
@@ -114,10 +151,27 @@ func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
 }
 
 func (t *TcpTransport) read(c net.Conn) {
+	buf := make([]byte, 64*1024)
+	lenBuf := make([]byte, 4)
+
+	r := bufio.NewReader(c)
 	for {
 
-		var buf bytes.Buffer
-		_, err := io.Copy(&buf, c)
+		// read  to get the length
+		_, err := r.Read(lenBuf)
+		if err != nil {
+			panic(err)
+		}
+		length := binary.LittleEndian.Uint32(lenBuf)
+
+		_, err = io.ReadFull(r, buf[:int(length)])
+		if err != nil {
+			panic(err)
+		}
+
+		//	var buf bytes.Buffer
+		//	b, err := ioutil.ReadAll(c)
+		//_, err := io.Copy(&buf, c)
 		if err != nil {
 			t.logger.Error("reading from conn",
 				zap.Any("conn", c),
@@ -126,16 +180,26 @@ func (t *TcpTransport) read(c net.Conn) {
 			continue
 		}
 
-		// convert to our rpc message type and custom rpc format
-		addr, err := addrOf(c)
-		if err != nil {
-			t.logger.Error("read",
-				zap.Error(err))
-			continue
+		res := make([]byte, int(length))
+		n := copy(res, buf[:int(length)])
+		if n != int(length) {
+			panic(fmt.Sprintf("copy failed want %d got %d", int(length), n))
 		}
+
+		// first 4 are len of id
+		idLen := binary.LittleEndian.Uint32(res[:4])
+		offset := uint32(4)
+		id := string(res[offset : offset+idLen])
+		offset += idLen
+		// then payload len
+		pLen := binary.LittleEndian.Uint32(res[offset : offset+4])
+		offset += 4
+		payload := (res[offset : offset+pLen])
+
+		//io.CopyN(bufio.NewWriter( bytes.NewBuffer()res), bufio.NewReader(buf), int64(length))
 		rpc := RPC{
-			From:    addr,
-			Content: bytes.NewReader(buf.Bytes()),
+			From:    id,
+			Content: bytes.NewReader(payload),
 		}
 
 		t.recv <- rpc
@@ -158,7 +222,9 @@ func (t *TcpTransport) listen() {
 		if err != nil {
 			t.logger.Error("accept error", zap.Error(err))
 		}
-		t.connections[id] = conn
+		t.lock.Lock()
+		t.connections[id.String()] = conn
+		t.lock.Unlock()
 		go t.read(conn)
 
 	}
@@ -173,3 +239,33 @@ func addrOf(c net.Conn) (net.Addr, error) {
 	}
 	return nil, fmt.Errorf("connection %+v doesn't have a known address", c)
 }
+
+/*
+var delim = "\n"
+
+func encoderSender(addr net.Addr) []byte {
+	buf := &bytes.Buffer{}
+	buf.WriteString(addr.Network())
+	buf.WriteString(delim)
+	buf.WriteString(addr.String())
+	buf.WriteString(delim)
+	return buf.Bytes()
+}
+
+func decodeSender(b []byte) (net.Addr, error) {
+	r := bufio.NewReader(bytes.NewReader(b))
+	network,err := r.ReadBytes('\n')
+	if err != nil {
+		return nil, err
+	}
+	str, err := r.ReadBytes('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	switch network{
+	case "tcp":
+		return &net.
+	}
+}
+*/

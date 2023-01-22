@@ -18,6 +18,7 @@ func (l LocalAddr) String() string  { return string(l) }
 func init() {
 	var hackAddr LocalAddr
 	gob.Register(hackAddr)
+	gob.Register(new(net.TCPAddr))
 }
 
 type LocalTransport struct {
@@ -40,29 +41,16 @@ func NewLocalTransport(addr net.Addr) *LocalTransport {
 	}
 }
 
-func (lt *LocalTransport) Get(addr net.Addr) (Transport, bool) {
+func (lt *LocalTransport) IsConnected(addr net.Addr) bool {
 	lt.logger.Info("Get",
 		zap.Any("want", addr),
 		zap.Any("have", lt.peers))
-	peer, exists := lt.peers[addr.(LocalAddr)]
-	return peer, exists
+	_, exists := lt.peers[addr.(LocalAddr)]
+	return exists
 }
 
 func (lt *LocalTransport) Recv() <-chan RPC {
 	return lt.recvCh
-}
-
-func (lt *LocalTransport) Broadcast(payload Payload) error {
-	for _, p := range lt.peers {
-		if payload.data == nil {
-			return fmt.Errorf("refusing to send nil payload")
-		}
-		err := lt.Send(p.Addr(), payload)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // setup up bidirecional connection between transports
@@ -121,7 +109,7 @@ func (lt *LocalTransport) Send(to net.Addr, payload Payload) error {
 	}
 
 	msg := RPC{
-		From:    lt.addr,
+		From:    lt.addr.String(),
 		Content: payload.Reader(),
 	}
 

@@ -1,3 +1,25 @@
+Implement TCP transport
+
+The big learning lesson is that we fucked up the initial transport design.
+
+We knew that we want to get to TCP, UDP eventually. But we didn't really think ahead to that very much. 
+
+Simple things that would have helped alot:
+Seperate the transport and connections -- our local transport should have between composed of local connections that implement
+a subset of of the net.Conn interface
+
+this would have made us use a standard interface for connections, which would be easier to implement for other kinds of connections.
+
+basically we mixed up the transport and the connections. this pain was also felt in the local transport refactor that had to go into
+supporting syncing blocks. in that case, we needs to make the local transport bi directional. ultimately we needed bi-directional connections
+by intermingling the transport and connections, we made a lot of extra work for ourselves.
+
+said differently, even though we didn't know exactly what we wanted to build a little more 'standing on the shoulders giants' by
+adopting and conforming to standard interfaces and composition would have saved a ton to later work. it's a good lesson.
+
+
+
+
 Refactoring transport in support of block syncing
 Refactor transport connections
 
