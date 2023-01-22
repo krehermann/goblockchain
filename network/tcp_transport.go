@@ -76,6 +76,9 @@ func (t *TcpTransport) Connect(o Transport) error {
 		zap.Any("to", o),
 	)
 
+	if t.IsConnected(o.Addr()) {
+		return nil
+	}
 	conn, err := net.Dial(o.Addr().Network(), o.Addr().String())
 	if err != nil {
 		return err
@@ -105,47 +108,19 @@ func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
 	if !exists {
 		return fmt.Errorf("%s unknown peer %s", t.addr, to)
 	}
-
-	// send length
-	bs := make([]byte, 4)
-
-	id := []byte(t.addr.String())
-	msgLen := len(id) + 4 + len(payload.data) + 4
-
-	// write entire message length
-	binary.LittleEndian.PutUint32(bs, uint32(msgLen))
-	_, err := peer.Write(bs)
+	e := newtcpEnvelope(t.addr.String(), payload.data)
+	buf, err := encodeEnvelope(e)
 	if err != nil {
 		return err
 	}
-
-	// write length of id
-	binary.LittleEndian.PutUint32(bs, uint32(len(id)))
-	_, err = peer.Write(bs)
+	n, err := peer.Write(buf)
 	if err != nil {
 		return err
 	}
-
-	_, err = peer.Write(id)
-	if err != nil {
-		return err
-	}
-
-	// write length of id
-	binary.LittleEndian.PutUint32(bs, uint32(len(payload.data)))
-	_, err = peer.Write(bs)
-	if err != nil {
-		return err
-	}
-
-	n, err := peer.Write(payload.data)
-	if err != nil {
-		return err
-	}
-	if n != len(payload.data) {
+	if n != len(buf) {
 		return fmt.Errorf("corrupt write len %d != %d", n, len(payload.data))
 	}
-
+	t.logger.Sugar().Debugf("wrote %d to %s", n, peer.LocalAddr())
 	return nil
 
 }
@@ -163,43 +138,22 @@ func (t *TcpTransport) read(c net.Conn) {
 			panic(err)
 		}
 		length := binary.LittleEndian.Uint32(lenBuf)
+		t.logger.Sugar().Debugf("read msg len %d", length)
 
 		_, err = io.ReadFull(r, buf[:int(length)])
 		if err != nil {
 			panic(err)
 		}
 
-		//	var buf bytes.Buffer
-		//	b, err := ioutil.ReadAll(c)
-		//_, err := io.Copy(&buf, c)
+		var envelope tcpEnvelope
+		err = decodeEnvelope(buf[:int(length)], &envelope)
 		if err != nil {
-			t.logger.Error("reading from conn",
-				zap.Any("conn", c),
-				zap.Error(err),
-			)
-			continue
+			panic(err)
 		}
 
-		res := make([]byte, int(length))
-		n := copy(res, buf[:int(length)])
-		if n != int(length) {
-			panic(fmt.Sprintf("copy failed want %d got %d", int(length), n))
-		}
-
-		// first 4 are len of id
-		idLen := binary.LittleEndian.Uint32(res[:4])
-		offset := uint32(4)
-		id := string(res[offset : offset+idLen])
-		offset += idLen
-		// then payload len
-		pLen := binary.LittleEndian.Uint32(res[offset : offset+4])
-		offset += 4
-		payload := (res[offset : offset+pLen])
-
-		//io.CopyN(bufio.NewWriter( bytes.NewBuffer()res), bufio.NewReader(buf), int64(length))
 		rpc := RPC{
-			From:    id,
-			Content: bytes.NewReader(payload),
+			From:    envelope.senderId,
+			Content: bytes.NewReader(envelope.data),
 		}
 
 		t.recv <- rpc
@@ -239,33 +193,3 @@ func addrOf(c net.Conn) (net.Addr, error) {
 	}
 	return nil, fmt.Errorf("connection %+v doesn't have a known address", c)
 }
-
-/*
-var delim = "\n"
-
-func encoderSender(addr net.Addr) []byte {
-	buf := &bytes.Buffer{}
-	buf.WriteString(addr.Network())
-	buf.WriteString(delim)
-	buf.WriteString(addr.String())
-	buf.WriteString(delim)
-	return buf.Bytes()
-}
-
-func decodeSender(b []byte) (net.Addr, error) {
-	r := bufio.NewReader(bytes.NewReader(b))
-	network,err := r.ReadBytes('\n')
-	if err != nil {
-		return nil, err
-	}
-	str, err := r.ReadBytes('\n')
-	if err != nil {
-		return nil, err
-	}
-
-	switch network{
-	case "tcp":
-		return &net.
-	}
-}
-*/
