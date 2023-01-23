@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
@@ -93,8 +94,9 @@ func (p *Peers) String() string {
 }
 
 type ServerOpts struct {
-	ID        string
-	Transport network.Transport
+	ID              string
+	ApiListenerAddr string
+	Transport       network.Transport
 	// multiple transport layers
 	PrivateKey    crypto.PrivateKey
 	BlockTime     time.Duration
@@ -203,6 +205,16 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	if s.ApiListenerAddr != "" {
+		apiServer, _ := api.NewServer(
+			api.ServerConfig{
+				ListenerAddr: s.ApiListenerAddr,
+
+				Logger: s.logger.Named("api-server")},
+			s.chain,
+		)
+		go apiServer.Start()
+	}
 errorLoop:
 	for {
 		select {

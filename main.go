@@ -50,16 +50,16 @@ func main() {
 
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
 	//	localServer.PeerTransports = append(localServer.PeerTransports, remotes[0].Transport)
-
+	localServer.ApiListenerAddr = ":9999"
 	go localServer.Start(ctx)
 	err = remotes[0].Connect(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 	err = remotes[0].Subscribe(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(30 * time.Second)
 	cancelFunc()
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	lhdr, err := localServer.Blockchain.GetHeader(localServer.Blockchain.Height())
 	if err != nil {
