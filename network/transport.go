@@ -2,6 +2,7 @@ package network
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -14,7 +15,9 @@ type Transport interface {
 	Send(net.Addr, Payload) error
 	Addr() net.Addr
 
-	IsConnected(net.Addr) bool
+	//IsConnected(net.Addr) bool
+	Get(string) (Pipe, bool)
+	Broadcast(Payload) error
 }
 
 type Payload struct {
@@ -27,4 +30,27 @@ func (p Payload) Reader() io.Reader {
 
 func CreatePayload(d []byte) Payload {
 	return Payload{data: d}
+}
+
+type Pipe interface {
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
+	String() string
+}
+
+type pipeImpl struct {
+	local  net.Addr
+	remote net.Addr
+}
+
+func (p *pipeImpl) LocalAddr() net.Addr {
+	return p.local
+}
+
+func (p *pipeImpl) RemoteAddr() net.Addr {
+	return p.remote
+}
+
+func (p *pipeImpl) String() string {
+	return fmt.Sprintf("%s (local) -> %s (remote)", p.local.String(), p.remote.String())
 }

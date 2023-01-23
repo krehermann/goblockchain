@@ -61,6 +61,18 @@ func (t *TcpTransport) Recv() <-chan RPC {
 	return t.recv
 }
 
+func (t *TcpTransport) Get(id string) (Pipe, bool) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	addr, exists := t.connections[id]
+	if !exists {
+		return nil, false
+	}
+	return &pipeImpl{
+		local:  addr.LocalAddr(),
+		remote: addr.RemoteAddr()}, exists
+}
+
 func (t *TcpTransport) IsConnected(addr net.Addr) bool {
 	t.lock.RLock()
 	_, exists := t.connections[addr.String()]
@@ -72,25 +84,49 @@ func (t *TcpTransport) Connect(o Transport) error {
 	// has to be a tcp partner
 	tcpPartner := o.(*TcpTransport)
 	t.logger.Info("connect",
-		zap.Any("from", t),
-		zap.Any("to", o),
+		zap.Any("from", t.addr.String()),
+		zap.Any("to", o.Addr().String()),
 	)
 
 	if t.IsConnected(o.Addr()) {
 		return nil
 	}
+
 	conn, err := net.Dial(o.Addr().Network(), o.Addr().String())
 	if err != nil {
 		return err
 	}
+
+	t.logger.Info("connect",
+		zap.Any("conn.local", conn.LocalAddr().String()),
+		zap.Any("conn.remote", conn.RemoteAddr().String()))
 
 	t.lock.Lock()
 	_, exists := t.connections[tcpPartner.Addr().String()]
 	if !exists {
 		t.connections[tcpPartner.Addr().String()] = conn
 	}
+	go t.read(conn)
 	t.lock.Unlock()
 
+	return nil
+}
+
+func (t *TcpTransport) Broadcast(payload Payload) error {
+	var conns []net.Conn
+	t.lock.RLock()
+	for _, conn := range t.connections {
+		conns = append(conns, conn)
+	}
+	t.lock.RUnlock()
+
+	for _, conn := range conns {
+		err := t.send(conn, payload)
+		if err != nil {
+			t.logger.Error("tcp broadcast. error sending",
+				zap.Error(err))
+		}
+	}
 	return nil
 }
 
@@ -108,24 +144,33 @@ func (t *TcpTransport) Send(to net.Addr, payload Payload) error {
 	if !exists {
 		return fmt.Errorf("%s unknown peer %s", t.addr, to)
 	}
+
+	return t.send(peer, payload)
+}
+func (t *TcpTransport) send(conn net.Conn, payload Payload) error {
+
 	e := newtcpEnvelope(t.addr.String(), payload.data)
 	buf, err := encodeEnvelope(e)
 	if err != nil {
 		return err
 	}
-	n, err := peer.Write(buf)
+	n, err := conn.Write(buf)
 	if err != nil {
 		return err
 	}
 	if n != len(buf) {
 		return fmt.Errorf("corrupt write len %d != %d", n, len(payload.data))
 	}
-	t.logger.Sugar().Debugf("wrote %d to %s", n, peer.LocalAddr())
+	t.logger.Sugar().Debugf("wrote %d to %s", n, conn.LocalAddr())
 	return nil
 
 }
 
 func (t *TcpTransport) read(c net.Conn) {
+	t.logger.Info("reading connection",
+		zap.Any("conn.local", c.LocalAddr().String()),
+		zap.Any("conn.remote", c.RemoteAddr().String()))
+
 	buf := make([]byte, 64*1024)
 	lenBuf := make([]byte, 4)
 
@@ -172,16 +217,34 @@ func (t *TcpTransport) listen() {
 		if err != nil {
 			t.logger.Error("accept error", zap.Error(err))
 		}
-		id, err := addrOf(conn)
-		if err != nil {
-			t.logger.Error("accept error", zap.Error(err))
-		}
+		/*
+			id, err := conn.RemoteAddr() //addrOf(conn)
+			if err != nil {
+				t.logger.Error("accept error", zap.Error(err))
+			}
+		*/
+		id := conn.RemoteAddr()
+		t.logger.Debug("accepted connection",
+			zap.Any("conn", conn),
+			zap.Any("conn.remote", conn.RemoteAddr().String()),
+			zap.Any("conn.local", conn.LocalAddr().String()),
+
+			zap.String("id", id.String()),
+		)
+
 		t.lock.Lock()
 		t.connections[id.String()] = conn
 		t.lock.Unlock()
 		go t.read(conn)
 
 	}
+}
+
+func (t *TcpTransport) GetConn(to net.Addr) (net.Conn, bool) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	c, exists := t.connections[to.String()]
+	return c, exists
 }
 
 func addrOf(c net.Conn) (net.Addr, error) {

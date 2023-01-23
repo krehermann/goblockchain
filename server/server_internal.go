@@ -132,16 +132,29 @@ func (s *Server) broadcastTx(tx *core.Transaction) error {
 }
 
 func (s *Server) broadcast(msg *api.Message) error {
-	if len(s.Peers) == 0 {
+	if s.Peers.Len() == 0 {
 		s.logger.Warn("broadcasting without peers")
 	}
-	for _, peer := range s.Peers {
-		err := s.send(peer, msg)
-		if err != nil {
-			return err
-		}
+	data, err := msg.Bytes()
+	if err != nil {
+		return err
 	}
-	return nil
+	return s.Transport.Broadcast(network.CreatePayload(data))
+	//return nil
+
+	/*
+		s.logger.Debug("broadcast", zap.Any("peers", s.Peers.String()))
+		for _, peer := range s.Peers.Slice() {
+			err := s.send(peer.RemoteAddr(), msg)
+			if err != nil {
+				s.logger.Error("broadcast error sending",
+					zap.String("to", peer.RemoteAddr().String()),
+					zap.Error(err))
+				continue
+			}
+		}
+	*/
+	//	return nil
 }
 
 func (s *Server) send(addr net.Addr, msg *api.Message) error {
@@ -263,9 +276,8 @@ func (s *Server) handleBlock(b *core.Block) error {
 func (s *Server) requestBlocks() error {
 	n := s.chain.Height() + 1
 	req := &api.GetBlocksRequest{
-		RequestorID:   s.ID,
-		RequestorAddr: s.Transport.Addr(),
-		StartHeight:   n,
+		RequestorID: s.Transport.Addr().String(), //s.ID,
+		StartHeight: n,
 	}
 	s.logger.Info("requesting blocks",
 		zap.Any("request", req),
@@ -286,6 +298,15 @@ func (s *Server) handleGetBlocksRequest(msg *api.GetBlocksRequest) error {
 		zap.Any("req", msg),
 	)
 
+	pipe, exists := s.Peers.get(msg.RequestorID)
+	//pipe, exists := s.Transport.Get(msg.RequestorID)
+	if !exists {
+		s.logger.Error("handleGetBlocks unknown requestor",
+			zap.String("id", msg.RequestorID),
+		)
+		return fmt.Errorf("cannot service request to unknown requestor %s", msg.RequestorID)
+	}
+
 	blocksToSend := make([]*core.Block, 0)
 	for i := msg.StartHeight; i <= s.chain.Height(); i++ {
 		block, err := s.chain.GetBlockAt(i)
@@ -302,7 +323,8 @@ func (s *Server) handleGetBlocksRequest(msg *api.GetBlocksRequest) error {
 	if err != nil {
 		return err
 	}
-	s.send(msg.RequestorAddr, out)
+
+	s.send(pipe.RemoteAddr(), out)
 	return nil
 }
 

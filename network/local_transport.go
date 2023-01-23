@@ -41,6 +41,18 @@ func NewLocalTransport(addr net.Addr) *LocalTransport {
 	}
 }
 
+func (lt *LocalTransport) Get(id string) (Pipe, bool) {
+	lt.m.RLock()
+	tr, exists := lt.peers[LocalAddr(id)]
+	lt.m.Unlock()
+	if !exists {
+		return nil, false
+	}
+
+	return &pipeImpl{
+		local:  lt.addr,
+		remote: tr.Addr()}, true
+}
 func (lt *LocalTransport) IsConnected(addr net.Addr) bool {
 	lt.logger.Info("Get",
 		zap.Any("want", addr),
@@ -87,6 +99,19 @@ func (lt *LocalTransport) Connect(tr Transport) error {
 
 func (lt *LocalTransport) Addr() net.Addr {
 	return lt.addr
+}
+
+func (lt *LocalTransport) Broadcast(payload Payload) error {
+	lt.m.RLock()
+	defer lt.m.RUnlock()
+
+	for _, t := range lt.peers {
+		err := lt.Send(t.Addr(), payload)
+		if err != nil {
+			lt.logger.Error("broadcast", zap.Error(err))
+		}
+	}
+	return nil
 }
 
 func (lt *LocalTransport) Send(to net.Addr, payload Payload) error {
