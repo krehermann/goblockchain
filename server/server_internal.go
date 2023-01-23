@@ -21,7 +21,6 @@ validationLoop:
 	for {
 
 		select {
-		// prevent busy loop
 		case <-blockTicker.C:
 			// need to call consensus logic here
 			err := s.createNewBlock()
@@ -140,21 +139,6 @@ func (s *Server) broadcast(msg *api.Message) error {
 		return err
 	}
 	return s.Transport.Broadcast(network.CreatePayload(data))
-	//return nil
-
-	/*
-		s.logger.Debug("broadcast", zap.Any("peers", s.Peers.String()))
-		for _, peer := range s.Peers.Slice() {
-			err := s.send(peer.RemoteAddr(), msg)
-			if err != nil {
-				s.logger.Error("broadcast error sending",
-					zap.String("to", peer.RemoteAddr().String()),
-					zap.Error(err))
-				continue
-			}
-		}
-	*/
-	//	return nil
 }
 
 func (s *Server) send(addr net.Addr, msg *api.Message) error {
@@ -276,7 +260,7 @@ func (s *Server) handleBlock(b *core.Block) error {
 func (s *Server) requestBlocks() error {
 	n := s.chain.Height() + 1
 	req := &api.GetBlocksRequest{
-		RequestorID: s.Transport.Addr().String(), //s.ID,
+		RequestorID: s.Transport.Addr().String(),
 		StartHeight: n,
 	}
 	s.logger.Info("requesting blocks",
@@ -299,7 +283,6 @@ func (s *Server) handleGetBlocksRequest(msg *api.GetBlocksRequest) error {
 	)
 
 	pipe, exists := s.Peers.get(msg.RequestorID)
-	//pipe, exists := s.Transport.Get(msg.RequestorID)
 	if !exists {
 		s.logger.Error("handleGetBlocks unknown requestor",
 			zap.String("id", msg.RequestorID),
