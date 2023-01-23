@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/protocol"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 
@@ -314,7 +314,7 @@ func sendRandomTransaction(from, to network.Transport) error {
 	if err != nil {
 		return err
 	}
-	msg := api.NewMessage(api.MessageTypeTx, txEncoded.Bytes())
+	msg := protocol.NewMessage(protocol.MessageTypeTx, txEncoded.Bytes())
 	d, err := msg.Bytes()
 	if err != nil {
 		return err

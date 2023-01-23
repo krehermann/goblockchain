@@ -5,9 +5,9 @@ import (
 	"encoding/gob"
 	"fmt"
 
-	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/protocol"
 )
 
 // convert an rpc that contains Contents of a Message to a decoded message.
@@ -18,7 +18,7 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 	// implement a rpc handler for whatever interpreteration of payload
 	var out network.DecodedMessage
 
-	msg, err := api.MessageFromRPC(rpc)
+	msg, err := protocol.MessageFromRPC(rpc)
 	if err != nil {
 		return &out, err
 	}
@@ -28,7 +28,7 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 	msgReader := bytes.NewReader(msg.Data)
 
 	switch msg.Header {
-	case api.MessageTypeTx:
+	case protocol.MessageTypeTx:
 		tx := new(core.Transaction)
 		err := tx.Decode(core.NewGobTxDecoder(msgReader))
 		if err != nil {
@@ -38,7 +38,7 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: tx}
 
-	case api.MessageTypeBlock:
+	case protocol.MessageTypeBlock:
 		b := new(core.Block)
 		err := b.Decode(core.NewDefaultBlockDecoder(msgReader))
 		if err != nil {
@@ -47,8 +47,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 		out = network.DecodedMessage{
 			From: rpc.From,
 			Data: b}
-	case api.MessageTypeStatusRequest:
-		sMsg := new(api.StatusMessageRequest)
+	case protocol.MessageTypeStatusRequest:
+		sMsg := new(protocol.StatusMessageRequest)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode status message from %s: %w", rpc.From, err)
@@ -58,8 +58,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
-	case api.MessageTypeStatusResponse:
-		sMsg := new(api.StatusMessageResponse)
+	case protocol.MessageTypeStatusResponse:
+		sMsg := new(protocol.StatusMessageResponse)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode status message from %s: %w", rpc.From, err)
@@ -68,8 +68,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
-	case api.MessageTypeSubscribeRequest:
-		sMsg := new(api.SubscribeMessageRequest)
+	case protocol.MessageTypeSubscribeRequest:
+		sMsg := new(protocol.SubscribeMessageRequest)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode subscribe request message from %s: %w", rpc.From, err)
@@ -79,8 +79,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
-	case api.MessageTypeSubscribeResponse:
-		sMsg := new(api.SubscribeMessageResponse)
+	case protocol.MessageTypeSubscribeResponse:
+		sMsg := new(protocol.SubscribeMessageResponse)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode subscribe response message from %s: %w", rpc.From, err)
@@ -89,8 +89,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
-	case api.MessageTypeGetBlocksRequest:
-		sMsg := new(api.GetBlocksRequest)
+	case protocol.MessageTypeGetBlocksRequest:
+		sMsg := new(protocol.GetBlocksRequest)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode get block request message from %s: %w", rpc.From, err)
@@ -100,8 +100,8 @@ func ExtractMessageFromRPC(rpc network.RPC) (*network.DecodedMessage, error) {
 			From: rpc.From,
 			Data: sMsg}
 
-	case api.MessageTypeGetBlocksResponse:
-		sMsg := new(api.GetBlocksResponse)
+	case protocol.MessageTypeGetBlocksResponse:
+		sMsg := new(protocol.GetBlocksResponse)
 		err := gob.NewDecoder(msgReader).Decode(sMsg)
 		if err != nil {
 			return &out, fmt.Errorf("HandleRPC: failed to decode get block response message from %s: %w", rpc.From, err)

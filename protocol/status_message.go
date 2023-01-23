@@ -1,4 +1,4 @@
-package api
+package protocol
 
 import (
 	"github.com/krehermann/goblockchain/core"
