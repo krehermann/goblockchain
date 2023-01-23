@@ -26,7 +26,7 @@ func TestNetwork(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancelFunc := context.WithCancel(ctx)
 
-	blockTime := 500 * time.Millisecond
+	blockTime := 200 * time.Millisecond
 
 	l, err := zap.NewDevelopment()
 	assert.NoError(t, err)
@@ -58,7 +58,7 @@ func TestNetwork(t *testing.T) {
 
 	n.startServers()
 
-	time.Sleep(2 * blockTime)
+	time.Sleep(3 * blockTime)
 
 	lateComer := generateNonValidators(t, l, "late")[0]
 
@@ -69,7 +69,7 @@ func TestNetwork(t *testing.T) {
 	//lateComer.Join(v)
 	lateComer.Subscribe(v.Transport)
 
-	n.runFor(1, cancelFunc)
+	n.runFor(2, cancelFunc)
 
 	servers := make([]*Server, 0)
 	for _, server := range n.Servers {

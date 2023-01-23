@@ -59,11 +59,9 @@ func (p *Peers) Slice() []network.Pipe {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	//var temp []string
 	for _, k := range keys {
 		pipe := p.pipes[k]
 		out = append(out, pipe)
-		//temp = append(temp, fmt.Sprintf("%s:%s", k, pipe.String()))
 	}
 
 	return out
@@ -120,8 +118,7 @@ type Server struct {
 	logger      *zap.Logger
 	errChan     chan error
 	chain       *core.Blockchain
-	Peers       *Peers //[]network.Pipe
-
+	Peers       *Peers
 }
 
 func NewServer(opts ServerOpts) (*Server, error) {
@@ -135,7 +132,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		opts.BlockTime = defaultBlockTime
 	}
 	if opts.RPCDecodeFunc == nil {
-		opts.RPCDecodeFunc = ExtractMessageFromRPC //ExtractMessageFromRPC
+		opts.RPCDecodeFunc = ExtractMessageFromRPC
 	}
 	if opts.ID == "" {
 		opts.ID = strconv.FormatInt(int64(rand.Intn(1000)), 10)

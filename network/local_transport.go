@@ -1,7 +1,6 @@
 package network
 
 import (
-	"encoding/gob"
 	"fmt"
 	"net"
 	"sync"
@@ -13,13 +12,6 @@ type LocalAddr string
 
 func (l LocalAddr) Network() string { return "local" }
 func (l LocalAddr) String() string  { return string(l) }
-
-// hack
-func init() {
-	var hackAddr LocalAddr
-	gob.Register(hackAddr)
-	gob.Register(new(net.TCPAddr))
-}
 
 type LocalTransport struct {
 	addr net.Addr
