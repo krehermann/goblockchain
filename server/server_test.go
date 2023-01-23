@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math"
+	"net"
 	"reflect"
 	"sort"
 	"sync"
@@ -57,7 +58,7 @@ func TestNetwork(t *testing.T) {
 
 	n.startServers()
 
-	time.Sleep(4 * blockTime)
+	time.Sleep(2 * blockTime)
 
 	lateComer := generateNonValidators(t, l, "late")[0]
 
@@ -65,9 +66,10 @@ func TestNetwork(t *testing.T) {
 	n.toplgy.connect(lateComer.ID, v.ID)
 	n.startServer(lateComer)
 	n.initializeConnections(lateComer)
-	lateComer.Join(v)
+	//lateComer.Join(v)
+	lateComer.Subscribe(v.Transport)
 
-	n.runFor(3, cancelFunc)
+	n.runFor(1, cancelFunc)
 
 	servers := make([]*Server, 0)
 	for _, server := range n.Servers {
@@ -234,10 +236,21 @@ func (n *testNetwork) register(servers ...*Server) {
 
 func generateValidator(t *testing.T, l *zap.Logger, id string) *Server {
 	// TODO hook for non-local transport
-	tr := network.NewLocalTransport(network.LocalAddr(id))
+	//tr := network.NewLocalTransport(network.LocalAddr(id))
+	tr, err := network.NewTcpTransport(getTcpAddr(t), network.TcpLogger(l.Named(id)))
+	require.NoError(t, err)
 	opts := makeValidatorOpts(id, tr)
 	opts.Logger = l
 	return mustMakeServer(t, opts)
+}
+
+func getTcpAddr(t *testing.T) net.Addr {
+	l, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	defer l.Close()
+	t.Logf(" hack addr %s", l.Addr().String())
+	return l.Addr()
+
 }
 
 func generateNonValidators(t *testing.T, l *zap.Logger, ids ...string) []*Server {
@@ -249,7 +262,10 @@ func generateNonValidators(t *testing.T, l *zap.Logger, ids ...string) []*Server
 		if i > 0 && id == ids[i-1] {
 			continue
 		}
-		tr := network.NewLocalTransport(network.LocalAddr(id))
+		//		tr := network.NewLocalTransport(network.LocalAddr(id))
+		tr, err := network.NewTcpTransport(getTcpAddr(t), network.TcpLogger(l.Named(id)))
+		require.NoError(t, err)
+
 		opts := makeNonValidatorOpts(id, tr)
 		opts.Logger = l
 

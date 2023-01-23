@@ -3,7 +3,8 @@ package server
 import (
 	"context"
 	"math/rand"
-	"net"
+	"sort"
+	"strings"
 	"sync"
 
 	"fmt"
@@ -23,12 +24,80 @@ var (
 )
 
 type Peers struct {
+	m     sync.RWMutex
+	pipes map[string]network.Pipe
 }
+
+func NewPeers() *Peers {
+	return &Peers{
+		m:     sync.RWMutex{},
+		pipes: make(map[string]network.Pipe),
+	}
+}
+
+func (p *Peers) add(id string, pipe network.Pipe) {
+	p.m.Lock()
+	defer p.m.Unlock()
+	p.pipes[id] = pipe
+}
+
+func (p *Peers) get(id string) (network.Pipe, bool) {
+	p.m.RLock()
+	defer p.m.RUnlock()
+	pipe, exists := p.pipes[id]
+	return pipe, exists
+}
+
+func (p *Peers) Slice() []network.Pipe {
+	p.m.Lock()
+	defer p.m.Unlock()
+	var (
+		keys []string
+		out  []network.Pipe
+	)
+	for k := range p.pipes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	//var temp []string
+	for _, k := range keys {
+		pipe := p.pipes[k]
+		out = append(out, pipe)
+		//temp = append(temp, fmt.Sprintf("%s:%s", k, pipe.String()))
+	}
+
+	return out
+
+}
+
+func (p *Peers) Len() int {
+	p.m.RLock()
+	defer p.m.RUnlock()
+	return len(p.pipes)
+}
+func (p *Peers) String() string {
+	p.m.Lock()
+	defer p.m.Unlock()
+	var (
+		keys []string
+	)
+	for k := range p.pipes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var temp []string
+	for _, k := range keys {
+		pipe := p.pipes[k]
+		temp = append(temp, fmt.Sprintf("%s:%s", k, pipe.String()))
+	}
+
+	return strings.Join(temp, " , ")
+}
+
 type ServerOpts struct {
 	ID        string
 	Transport network.Transport
 	// multiple transport layers
-	Peers         []net.Addr
 	PrivateKey    crypto.PrivateKey
 	BlockTime     time.Duration
 	TxHasher      core.Hasher[*core.Transaction]
@@ -51,6 +120,8 @@ type Server struct {
 	logger      *zap.Logger
 	errChan     chan error
 	chain       *core.Blockchain
+	Peers       *Peers //[]network.Pipe
+
 }
 
 func NewServer(opts ServerOpts) (*Server, error) {
@@ -89,6 +160,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		logger:      opts.Logger.Named("server"),
 		errChan:     make(chan error, 1),
 		chain:       opts.Blockchain,
+		Peers:       NewPeers(),
 	}
 
 	// the server itself is the default rpc processor
@@ -264,14 +336,19 @@ func (s *Server) Join(peer *Server) error {
 // add s to leader's peers
 // subscribe might be cleaner in the transport layer, analog to consume
 func (s *Server) Subscribe(leader network.Transport) error {
-	s.logger.Info("subscribe",
+	s.logger.Info("Subscribe",
 		zap.String("to", leader.Addr().String()),
 		zap.String("subscriber", s.Transport.Addr().String()),
 	)
 
+	pipe, exists := s.Transport.Get(leader.Addr().String())
+	if !exists {
+		s.logger.Error("subscribe don't have connection to leader")
+	}
+
 	req := &api.SubscribeMessageRequest{
-		RequestorID:   s.ID,
-		RequestorAddr: s.Transport.Addr(),
+		RequestorID: s.Transport.Addr().String(),
+		Handle:      pipe.LocalAddr().String(), //s.ID,
 	}
 
 	msg, err := api.NewMessageFromSubscribeMessageRequest(req)
