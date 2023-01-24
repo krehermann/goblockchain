@@ -57,7 +57,7 @@ func main() {
 	err = remotes[0].Subscribe(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(12 * time.Second)
 	cancelFunc()
 	time.Sleep(5 * time.Second)
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/krehermann/goblockchain/types"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
 )
@@ -28,17 +29,86 @@ func (eos *ErrOutOfSync) Error() string {
 	return fmt.Sprintf("behind by %d blocks", eos.Lag)
 }
 
+type headerStore struct {
+	m    sync.RWMutex
+	data []*Header
+	idx  map[types.Hash]int
+}
+
+func newheaderStore() *headerStore {
+	return &headerStore{
+		m:    sync.RWMutex{},
+		data: make([]*Header, 0),
+		idx:  make(map[types.Hash]int),
+	}
+}
+
+func (hs *headerStore) put(blockId types.Hash, hdr *Header) error {
+	hs.m.RLock()
+	got, exists := hs.idx[blockId]
+	hs.m.RUnlock()
+	if exists {
+		return fmt.Errorf("header (%+v) already exists %+v", hdr, got)
+	}
+
+	hs.m.Lock()
+	defer hs.m.Unlock()
+	hs.data = append(hs.data, hdr)
+	hs.idx[blockId] = len(hs.data) - 1
+	return nil
+}
+
+func (hs *headerStore) empty() bool {
+	hs.m.RLock()
+	defer hs.m.RUnlock()
+	return len(hs.data) == 0
+}
+
+func (hs *headerStore) height() uint32 {
+	hs.m.RLock()
+	defer hs.m.RUnlock()
+
+	return uint32(len(hs.data) - 1)
+}
+
+func (hs *headerStore) getAt(height uint32) (*Header, error) {
+
+	if height > hs.height() {
+		return nil, fmt.Errorf("out of range. request height (%d) > %d", height, hs.height())
+	}
+
+	hs.m.RLock()
+	defer hs.m.RUnlock()
+	return hs.data[height], nil
+
+}
+
+func (hs *headerStore) getHash(hash types.Hash) (*Header, error) {
+	hs.m.RLock()
+	ix, exists := hs.idx[hash]
+	hs.m.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("header does not exist for hash %s", hash.String())
+	}
+
+	hs.m.Lock()
+	defer hs.m.Unlock()
+	return hs.data[ix], nil
+}
+
 type Blockchain struct {
 	store Storager
 
-	headerMu sync.RWMutex
-	headers  []*Header
+	headers *headerStore
 
 	validator Validator
 	logger    *zap.Logger
 
 	// TODO make State interface
 	contractState *vm.State
+
+	hasher Hasher[*Header]
 }
 
 type BlockchainOpt func(bc *Blockchain) *Blockchain
@@ -52,10 +122,11 @@ func WithLogger(l *zap.Logger) BlockchainOpt {
 
 func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 	bc := &Blockchain{
-		headers:       []*Header{},
+		headers:       newheaderStore(),
 		store:         NewMemStore(),
 		logger:        zap.L().Named("blockchain"),
 		contractState: vm.NewState(),
+		hasher:        DefaultBlockHasher{},
 	}
 
 	// this is a bit weird. need to be able to configure the validator
@@ -71,6 +142,9 @@ func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 }
 
 func (bc *Blockchain) AddBlock(b *Block) error {
+	bc.logger.Debug("Add block",
+		zap.Any("header", b.Header),
+	)
 	err := bc.validator.ValidateBlock(b)
 	if err != nil {
 		return err
@@ -106,11 +180,7 @@ func (bc *Blockchain) WithValidator(v Validator) {
 
 // thread safe
 func (bc *Blockchain) Height() uint32 {
-	// height doesn't count the last header
-	bc.headerMu.RLock()
-	defer bc.headerMu.RUnlock()
-
-	return uint32(len(bc.headers) - 1)
+	return bc.headers.height()
 }
 
 func (bc *Blockchain) HasBlockAtHeight(h uint32) bool {
@@ -119,14 +189,7 @@ func (bc *Blockchain) HasBlockAtHeight(h uint32) bool {
 
 func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
 
-	if height > bc.Height() {
-		return &Header{}, fmt.Errorf("cannot get header for block height %d: out of range %d", height, bc.Height())
-	}
-
-	bc.headerMu.RLock()
-	defer bc.headerMu.RUnlock()
-
-	return bc.headers[height], nil
+	return bc.headers.getAt(height)
 }
 
 func (bc *Blockchain) GetBlockAt(height uint32) (*Block, error) {
@@ -138,32 +201,33 @@ func (bc *Blockchain) GetBlockAt(height uint32) (*Block, error) {
 	return bc.store.Get(hdr)
 }
 
+func (bc *Blockchain) GetBlockHash(h types.Hash) (*Block, error) {
+	hdr, err := bc.headers.getHash(h)
+	if err != nil {
+		return nil, err
+	}
+	return bc.store.Get(hdr)
+}
+
 func (bc *Blockchain) addGensisBlock(b *Block) error {
 	// scope the lock
-	err := func() error {
-		bc.headerMu.RLock()
-		defer bc.headerMu.RUnlock()
 
-		if len(bc.headers) > 0 {
-			return fmt.Errorf("addGenesisBlock: refusing to add genesis block to non-0 len chain")
-		}
-		return nil
-	}()
-
-	if err != nil {
-		return err
+	if !bc.headers.empty() {
+		return fmt.Errorf("addGenesisBlock: refusing to add genesis block to non-0 len chain")
 	}
 	return bc.persistBlock(b)
 }
 
 func (bc *Blockchain) persistBlock(b *Block) error {
-	bc.headerMu.Lock()
-	bc.headers = append(bc.headers, b.Header)
-	bc.headerMu.Unlock()
+	bh := b.Hash(bc.hasher)
+	err := bc.headers.put(bh, b.Header)
+	if err != nil {
+		return err
+	}
 
 	bc.logger.Info("added block to chain",
 		zap.Int("height", int(bc.Height())),
-		zap.String("hash", b.Hash(DefaultBlockHasher{}).String()),
+		zap.String("hash", b.Hash(bc.hasher).String()),
 		zap.Any("tx len", len(b.Transactions)),
 	)
 	return bc.store.Put(b)
