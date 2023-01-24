@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"math/big"
 
 	"github.com/krehermann/goblockchain/types"
 )
@@ -37,14 +36,14 @@ func (k PrivateKey) PublicKey() PublicKey {
 }
 
 func (k PrivateKey) Sign(data []byte) (*Signature, error) {
-	r, s, err := ecdsa.Sign(rand.Reader, k.key, data)
+
+	s, err := ecdsa.SignASN1(rand.Reader, k.key, data)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Signature{
-		S: s,
-		R: r}, nil
+	out := Signature(s)
+	return &out, err
 }
 
 type PublicKey []byte
@@ -61,10 +60,7 @@ func (k PublicKey) Address() types.Address {
 	return types.MustAddressFromBytes(end)
 }
 
-type Signature struct {
-	R *big.Int
-	S *big.Int
-}
+type Signature []byte
 
 func (s *Signature) Verify(pubKey PublicKey, data []byte) bool {
 	x, y := elliptic.UnmarshalCompressed(elliptic.P256(), pubKey)
@@ -75,5 +71,5 @@ func (s *Signature) Verify(pubKey PublicKey, data []byte) bool {
 		Y:     y,
 	}
 
-	return ecdsa.Verify(key, data, s.R, s.S)
+	return ecdsa.VerifyASN1(key, data, *s)
 }

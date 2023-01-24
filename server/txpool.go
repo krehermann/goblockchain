@@ -146,7 +146,7 @@ func (p *TxPool) Add(tx *core.Transaction, hasher core.Hasher[*core.Transaction]
 }
 
 func (p *TxPool) Contains(h types.Hash) bool {
-	return p.all.Contains(h)
+	return p.pending.Contains(h)
 }
 
 type TxOrderedMap struct {
