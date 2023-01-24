@@ -58,3 +58,24 @@ func (h Hash) Prefix() string {
 	r := []rune(h.String())
 	return string(r[:8])
 }
+
+func (h Hash) MarshalJSON() ([]byte, error) {
+
+	return []byte(
+		fmt.Sprintf("\"%s\"",
+			h.String())), nil
+}
+
+func HashFromHex(hx string) (Hash, error) {
+	b, err := hex.DecodeString(hx)
+	if err != nil {
+		return Hash{}, err
+	}
+	return HashFromBytes(b), nil
+}
+
+/*
+func (h Hash) UnmarshalJSON([]byte) ([]byte,error) {
+	return []byte(h.String()), nil
+}
+*/

@@ -3,11 +3,11 @@ package server
 import (
 	"fmt"
 
-	"github.com/krehermann/goblockchain/api"
+	"github.com/krehermann/goblockchain/protocol"
 	"go.uber.org/zap"
 )
 
-func (s *Server) handleSubscribeMessageRequest(smsg *api.SubscribeMessageRequest) error {
+func (s *Server) handleSubscribeMessageRequest(smsg *protocol.SubscribeMessageRequest) error {
 	s.logger.Info("handleSubscribeMessageRequest",
 		zap.Any("status", smsg),
 	)
@@ -22,10 +22,10 @@ func (s *Server) handleSubscribeMessageRequest(smsg *api.SubscribeMessageRequest
 	//s.Peers = append(s.Peers, pipe)
 	s.Peers.add(smsg.RequestorID, pipe)
 	s.logger.Debug("added subscriber", zap.String("id", smsg.RequestorID))
-	msg := &api.SubscribeMessageResponse{
+	msg := &protocol.SubscribeMessageResponse{
 		ProviderId: s.Transport.Addr().String(),
 	}
-	resp, err := api.NewMessageFromSubscribeMessageResponse(msg)
+	resp, err := protocol.NewMessageFromSubscribeMessageResponse(msg)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (s *Server) handleSubscribeMessageRequest(smsg *api.SubscribeMessageRequest
 	return s.send(pipe.RemoteAddr(), resp)
 }
 
-func (s *Server) handleSubscribeMessageResponse(smsg *api.SubscribeMessageResponse) error {
+func (s *Server) handleSubscribeMessageResponse(smsg *protocol.SubscribeMessageResponse) error {
 	s.logger.Info("handleStatusMessageResponse",
 		zap.Any("subscribed to", smsg),
 	)

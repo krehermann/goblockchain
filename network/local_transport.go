@@ -36,7 +36,7 @@ func NewLocalTransport(addr net.Addr) *LocalTransport {
 func (lt *LocalTransport) Get(id string) (Pipe, bool) {
 	lt.m.RLock()
 	tr, exists := lt.peers[LocalAddr(id)]
-	lt.m.Unlock()
+	lt.m.RUnlock()
 	if !exists {
 		return nil, false
 	}

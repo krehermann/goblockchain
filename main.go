@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/protocol"
 	"github.com/krehermann/goblockchain/server"
 	"github.com/krehermann/goblockchain/vm"
 	"go.uber.org/zap"
@@ -50,16 +50,16 @@ func main() {
 
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
 	//	localServer.PeerTransports = append(localServer.PeerTransports, remotes[0].Transport)
-
+	localServer.ApiListenerAddr = ":9999"
 	go localServer.Start(ctx)
 	err = remotes[0].Connect(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 	err = remotes[0].Subscribe(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(12 * time.Second)
 	cancelFunc()
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	lhdr, err := localServer.Blockchain.GetHeader(localServer.Blockchain.Height())
 	if err != nil {
@@ -147,7 +147,7 @@ func sendRandomTransaction(from, to network.Transport) error {
 	if err != nil {
 		return err
 	}
-	msg := api.NewMessage(api.MessageTypeTx, txEncoded.Bytes())
+	msg := protocol.NewMessage(protocol.MessageTypeTx, txEncoded.Bytes())
 	d, err := msg.Bytes()
 	if err != nil {
 		return err

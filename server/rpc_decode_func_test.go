@@ -4,29 +4,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/krehermann/goblockchain/api"
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/protocol"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractMessageFromRPC(t *testing.T) {
-	for _, tp := range api.MessageTypes {
+	for _, tp := range protocol.MessageTypes {
 		switch tp {
-		case api.MessageTypeTx:
+		case protocol.MessageTypeTx:
 			testExtractTx(t)
 
-		case api.MessageTypeBlock:
+		case protocol.MessageTypeBlock:
 			testExtractBlock(t)
-		case api.MessageTypeGetBlocksRequest:
-			t.Logf("TODO %s", api.MessageTypeGetBlocksRequest)
-		case api.MessageTypeGetBlocksResponse:
-			t.Logf("TODO %s", api.MessageTypeGetBlocksResponse)
-		case api.MessageTypeStatusRequest:
-		case api.MessageTypeStatusResponse:
-		case api.MessageTypeSubscribeRequest:
-		case api.MessageTypeSubscribeResponse:
+		case protocol.MessageTypeGetBlocksRequest:
+			t.Logf("TODO %s", protocol.MessageTypeGetBlocksRequest)
+		case protocol.MessageTypeGetBlocksResponse:
+			t.Logf("TODO %s", protocol.MessageTypeGetBlocksResponse)
+		case protocol.MessageTypeStatusRequest:
+		case protocol.MessageTypeStatusResponse:
+		case protocol.MessageTypeSubscribeRequest:
+		case protocol.MessageTypeSubscribeResponse:
 		default:
 			assert.Failf(t, "unimplemented test for message type '%s'", tp.String())
 		}
@@ -35,7 +35,7 @@ func TestExtractMessageFromRPC(t *testing.T) {
 
 func testExtractTx(t *testing.T) {
 	tx := core.NewTransaction([]byte("tx"))
-	msg, err := api.NewMessageFromTransaction(tx)
+	msg, err := protocol.NewMessageFromTransaction(tx)
 	assert.NoError(t, err)
 
 	rpc := messageToRpc(t, msg)
@@ -57,7 +57,7 @@ func testExtractBlock(t *testing.T) {
 		[]*core.Transaction{core.NewTransaction([]byte("junk"))},
 	)
 
-	msg, err := api.NewMessageFromBlock(b)
+	msg, err := protocol.NewMessageFromBlock(b)
 	assert.NoError(t, err)
 
 	rpc := messageToRpc(t, msg)
@@ -70,7 +70,7 @@ func testExtractBlock(t *testing.T) {
 	assert.Equal(t, b, got)
 }
 
-func messageToRpc(t *testing.T, msg *api.Message) network.RPC {
+func messageToRpc(t *testing.T, msg *protocol.Message) network.RPC {
 	d, err := msg.Bytes()
 	assert.NoError(t, err)
 	payload := network.CreatePayload(d)

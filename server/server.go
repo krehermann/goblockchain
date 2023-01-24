@@ -15,6 +15,7 @@ import (
 	"github.com/krehermann/goblockchain/core"
 	"github.com/krehermann/goblockchain/crypto"
 	"github.com/krehermann/goblockchain/network"
+	"github.com/krehermann/goblockchain/protocol"
 	"github.com/krehermann/goblockchain/types"
 	"go.uber.org/zap"
 )
@@ -93,8 +94,9 @@ func (p *Peers) String() string {
 }
 
 type ServerOpts struct {
-	ID        string
-	Transport network.Transport
+	ID              string
+	ApiListenerAddr string
+	Transport       network.Transport
 	// multiple transport layers
 	PrivateKey    crypto.PrivateKey
 	BlockTime     time.Duration
@@ -203,6 +205,16 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	if s.ApiListenerAddr != "" {
+		apiServer, _ := api.NewServer(
+			api.ServerConfig{
+				ListenerAddr: s.ApiListenerAddr,
+
+				Logger: s.logger.Named("api-server")},
+			s.chain,
+		)
+		go apiServer.Start()
+	}
 errorLoop:
 	for {
 		select {
@@ -235,48 +247,48 @@ func (s *Server) ProcessMessage(dmsg *network.DecodedMessage) error {
 
 	case *core.Transaction:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeTx.String()),
+			zap.String("type", protocol.MessageTypeTx.String()),
 			zap.String("from", dmsg.From))
 
 		return s.handleTransaction(t)
 	case *core.Block:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeBlock.String()),
+			zap.String("type", protocol.MessageTypeBlock.String()),
 			zap.String("from", dmsg.From))
 		return s.handleBlock(t)
-	case *api.StatusMessageRequest:
+	case *protocol.StatusMessageRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeStatusRequest.String()),
+			zap.String("type", protocol.MessageTypeStatusRequest.String()),
 			zap.String("from", dmsg.From))
 		return s.handleStatusMessageRequest(t)
 
-	case *api.StatusMessageResponse:
+	case *protocol.StatusMessageResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeStatusResponse.String()),
+			zap.String("type", protocol.MessageTypeStatusResponse.String()),
 			zap.String("from", dmsg.From))
 		return s.handleStatusMessageResponse(t)
 
-	case *api.SubscribeMessageRequest:
+	case *protocol.SubscribeMessageRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeSubscribeRequest.String()),
+			zap.String("type", protocol.MessageTypeSubscribeRequest.String()),
 			zap.String("from", dmsg.From))
 		return s.handleSubscribeMessageRequest(t)
 
-	case *api.SubscribeMessageResponse:
+	case *protocol.SubscribeMessageResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeSubscribeResponse.String()),
+			zap.String("type", protocol.MessageTypeSubscribeResponse.String()),
 			zap.String("from", dmsg.From))
 		return s.handleSubscribeMessageResponse(t)
 
-	case *api.GetBlocksRequest:
+	case *protocol.GetBlocksRequest:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeGetBlocksRequest.String()),
+			zap.String("type", protocol.MessageTypeGetBlocksRequest.String()),
 			zap.String("from", dmsg.From))
 		return s.handleGetBlocksRequest(t)
 
-	case *api.GetBlocksResponse:
+	case *protocol.GetBlocksResponse:
 		s.logger.Info("ProcessMessage",
-			zap.String("type", api.MessageTypeGetBlocksResponse.String()),
+			zap.String("type", protocol.MessageTypeGetBlocksResponse.String()),
 			zap.String("from", dmsg.From))
 		return s.handleGetBlocksResponse(t)
 
@@ -343,12 +355,12 @@ func (s *Server) Subscribe(leader network.Transport) error {
 		s.logger.Error("subscribe don't have connection to leader")
 	}
 
-	req := &api.SubscribeMessageRequest{
+	req := &protocol.SubscribeMessageRequest{
 		RequestorID: s.Transport.Addr().String(),
 		Handle:      pipe.LocalAddr().String(), //s.ID,
 	}
 
-	msg, err := api.NewMessageFromSubscribeMessageRequest(req)
+	msg, err := protocol.NewMessageFromSubscribeMessageRequest(req)
 	if err != nil {
 		return err
 	}
