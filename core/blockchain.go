@@ -98,8 +98,9 @@ func (hs *headerStore) getHash(hash types.Hash) (*Header, error) {
 }
 
 type Blockchain struct {
-	store Storager
+	//store Storager
 
+	store   GenericStorager[*Header, *Block]
 	headers *headerStore
 
 	validator Validator
@@ -123,7 +124,7 @@ func WithLogger(l *zap.Logger) BlockchainOpt {
 func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 	bc := &Blockchain{
 		headers:       newheaderStore(),
-		store:         NewMemStore(),
+		store:         NewGenericMemStore[*Header, *Block](), //NewMemStore(),
 		logger:        zap.L().Named("blockchain"),
 		contractState: vm.NewState(),
 		hasher:        DefaultBlockHasher{},
@@ -230,6 +231,6 @@ func (bc *Blockchain) persistBlock(b *Block) error {
 		zap.String("hash", b.Hash(bc.hasher).String()),
 		zap.Any("tx len", len(b.Transactions)),
 	)
-	return bc.store.Put(b)
+	return bc.store.Put(b.Header, b)
 
 }

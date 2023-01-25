@@ -4,47 +4,52 @@ import (
 	"fmt"
 )
 
-type Storager interface {
-	Put(b *Block) error
-	Get(h *Header) (*Block, error)
+type GenericStorager[T comparable, V any] interface {
+	Put(T, V) error
+	Get(T) (V, error)
 }
 
-type MemStore struct {
-	putChan  chan *Block
-	readChan chan *getRequest
-	data     map[*Header]*Block
+type genericPut[T comparable, V any] struct {
+	key T
+	val V
 }
 
-type getRequest struct {
-	key      *Header
-	response chan<- *lookupResult
+type GenericMemStore[T comparable, V any] struct {
+	putChan  chan *genericPut[T, V]
+	readChan chan *genericGetRequest[T, V]
+	data     map[T]V
 }
 
-type lookupResult struct {
-	b      *Block
+type genericGetRequest[T comparable, V any] struct {
+	key      T
+	response chan<- *genericLookupResult[V]
+}
+
+type genericLookupResult[V any] struct {
+	val    any
 	exists bool
 }
 
-func NewMemStore() *MemStore {
-	s := &MemStore{
-		putChan:  make(chan *Block),
-		readChan: make(chan *getRequest),
-		data:     make(map[*Header]*Block),
+func NewGenericMemStore[T comparable, V any]() *GenericMemStore[T, V] {
+	s := &GenericMemStore[T, V]{
+		putChan:  make(chan *genericPut[T, V]),
+		readChan: make(chan *genericGetRequest[T, V]),
+		data:     make(map[T]V),
 	}
 
 	go s.handleAccess()
 	return s
 }
 
-func (s *MemStore) handleAccess() {
+func (s *GenericMemStore[T, V]) handleAccess() {
 	for {
 		select {
-		case b := <-s.putChan:
-			s.data[b.Header] = b
+		case p := <-s.putChan:
+			s.data[p.key] = p.val
 		case req := <-s.readChan:
-			b, ok := s.data[req.key]
-			req.response <- &lookupResult{
-				b:      b,
+			val, ok := s.data[req.key]
+			req.response <- &genericLookupResult[V]{
+				val:    val,
 				exists: ok,
 			}
 
@@ -52,22 +57,26 @@ func (s *MemStore) handleAccess() {
 	}
 }
 
-func (ms *MemStore) Put(b *Block) error {
+func (ms *GenericMemStore[T, V]) Put(key T, val V) error {
 
-	ms.putChan <- b
+	ms.putChan <- &genericPut[T, V]{
+		key: key,
+		val: val,
+	}
 	return nil
 }
 
-func (ms *MemStore) Get(h *Header) (*Block, error) {
-	respCh := make(chan *lookupResult, 1)
-	req := &getRequest{
-		key:      h,
+func (ms *GenericMemStore[T, V]) Get(key T) (V, error) {
+	respCh := make(chan *genericLookupResult[V], 1)
+	req := &genericGetRequest[T, V]{
+		key:      key,
 		response: respCh,
 	}
 	ms.readChan <- req
 	resp := <-respCh
+	var deflt V
 	if !resp.exists {
-		return nil, fmt.Errorf("header %+v does not exist in store", h)
+		return deflt, fmt.Errorf("key %+v does not exist in store", key)
 	}
-	return resp.b, nil
+	return resp.val.(V), nil
 }
