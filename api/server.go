@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 
@@ -17,12 +19,13 @@ type ServerConfig struct {
 
 type Server struct {
 	ServerConfig
-	chain *core.Blockchain
+	chain  *core.Blockchain
+	txChan chan<- *core.Transaction
 
 	logger *zap.Logger
 }
 
-func NewServer(config ServerConfig, chain *core.Blockchain) (*Server, error) {
+func NewServer(config ServerConfig, chain *core.Blockchain, txChan chan *core.Transaction) (*Server, error) {
 	if config.Logger == nil {
 		config.Logger, _ = zap.NewDevelopment()
 	}
@@ -30,6 +33,7 @@ func NewServer(config ServerConfig, chain *core.Blockchain) (*Server, error) {
 		ServerConfig: config,
 		chain:        chain,
 		logger:       config.Logger,
+		txChan:       txChan,
 	}
 
 	return s, nil
@@ -44,6 +48,7 @@ func (s *Server) Start() error {
 	echoer.GET("/block/height/:height", s.handleGetBlockByHeight)
 	echoer.GET("/txn/:hash", s.handleGetTransaction)
 
+	echoer.POST("/txn", s.handlePutTransaction)
 	return echoer.Start(s.ListenerAddr)
 }
 
@@ -103,6 +108,37 @@ func (s *Server) handleGetTransaction(ectx echo.Context) error {
 			"values": ectx.ParamValues(),
 			"val":    q,
 			"txn":    txn,
+		})
+}
+
+func (s *Server) handlePutTransaction(ectx echo.Context) error {
+
+	b, err := ioutil.ReadAll(ectx.Request().Body)
+
+	if err != nil {
+		return ectx.JSON(http.StatusBadRequest,
+			map[string]any{
+				"b":     b,
+				"error": err.Error(),
+			})
+	}
+
+	txn := new(core.Transaction)
+	err = json.Unmarshal(b, txn)
+
+	if err != nil {
+		return ectx.JSON(http.StatusBadRequest,
+			map[string]any{
+				"b":     string(b),
+				"error": err.Error(),
+			})
+	}
+
+	s.txChan <- txn
+
+	return ectx.JSON(http.StatusOK,
+		map[string]any{"msg": "transaction",
+			"txn": txn,
 		})
 }
 

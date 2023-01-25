@@ -52,15 +52,15 @@ func main() {
 	go func() {
 		cnt := 0
 		for {
-			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
-			time.Sleep(1 * time.Second)
+			//fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
+			time.Sleep(10 * time.Second)
 			cnt += 1
 		}
 	}()
 
-	time.Sleep(43 * time.Second)
+	time.Sleep(13 * time.Second)
 	cancelFunc()
-	time.Sleep(25 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	lhdr, err := localServer.Blockchain.GetHeader(localServer.Blockchain.Height())
 	if err != nil {

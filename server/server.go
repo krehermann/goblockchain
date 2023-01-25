@@ -121,6 +121,8 @@ type Server struct {
 	errChan     chan error
 	chain       *core.Blockchain
 	Peers       *Peers
+	// channel for transactions from the api server
+	apiTxCh chan *core.Transaction
 }
 
 func NewServer(opts ServerOpts) (*Server, error) {
@@ -160,6 +162,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		errChan:     make(chan error, 1),
 		chain:       opts.Blockchain,
 		Peers:       NewPeers(),
+		apiTxCh:     make(chan *core.Transaction),
 	}
 
 	// the server itself is the default rpc processor
@@ -175,6 +178,7 @@ func (s *Server) SetLogger(l *zap.Logger) {
 
 func (s *Server) receive() {
 	for rpc := range s.Transport.Recv() {
+
 		s.rpcChan <- rpc
 	}
 }
@@ -193,7 +197,7 @@ func (s *Server) Start(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.runRPCProcessor(ctx)
+		s.processChannels(ctx)
 		s.logger.Sugar().Info("done handling rpcs")
 	}()
 	if s.isValidator {
@@ -212,6 +216,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 				Logger: s.logger.Named("api-server")},
 			s.chain,
+			s.apiTxCh,
 		)
 		go apiServer.Start()
 	}
