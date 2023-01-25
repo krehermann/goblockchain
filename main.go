@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"time"
 
@@ -39,15 +40,6 @@ func main() {
 	// peer2 := network.NewLocalTransport("peer2")
 	remotes := initRemoteServers(ctx, peer0)
 
-	go func() {
-		cnt := 0
-		for {
-			//			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
-			time.Sleep(1 * time.Second)
-			cnt += 1
-		}
-	}()
-
 	localServer := mustMakeServer(makeValidatorOpts("LOCAL", local))
 	//	localServer.PeerTransports = append(localServer.PeerTransports, remotes[0].Transport)
 	localServer.ApiListenerAddr = ":9999"
@@ -57,9 +49,18 @@ func main() {
 	err = remotes[0].Subscribe(localServer.Transport)
 	fatalIfErr(cancelFunc, err)
 
-	time.Sleep(12 * time.Second)
+	go func() {
+		cnt := 0
+		for {
+			fatalIfErr(cancelFunc, sendRandomTransaction(peer0, local))
+			time.Sleep(1 * time.Second)
+			cnt += 1
+		}
+	}()
+
+	time.Sleep(20 * time.Second)
 	cancelFunc()
-	time.Sleep(5 * time.Second)
+	time.Sleep(25 * time.Second)
 
 	lhdr, err := localServer.Blockchain.GetHeader(localServer.Blockchain.Height())
 	if err != nil {
@@ -172,6 +173,7 @@ func transactionAdder() *core.Transaction {
 
 	a := 5
 	b := 2
+	c := rand.Intn(8)
 	txBytes := []byte{
 		// create bytes of key `abc`
 		// make the xx key
@@ -194,6 +196,7 @@ func transactionAdder() *core.Transaction {
 		byte(vm.InstructionAddInt),
 		// now the stack should be [abc], 7
 		byte(vm.InstructionStore),
+		byte(c),
 	}
 
 	return core.NewTransaction(txBytes)
