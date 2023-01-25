@@ -16,6 +16,7 @@ type TxPool struct {
 	pending *TxOrderedMap
 	logger  *zap.Logger
 	max     int
+	hasher  core.Hasher[*core.Transaction]
 }
 
 type TxPoolOpt func(*TxPool) *TxPool
@@ -29,6 +30,12 @@ func WithLogger(l *zap.Logger) TxPoolOpt {
 	}
 }
 
+func WithHasher(h core.Hasher[*core.Transaction]) TxPoolOpt {
+	return func(p *TxPool) *TxPool {
+		p.hasher = h
+		return p
+	}
+}
 func MaxPoolDepth(m int) TxPoolOpt {
 	return func(p *TxPool) *TxPool {
 		p.max = m
@@ -43,6 +50,7 @@ func NewTxPool(opts ...TxPoolOpt) *TxPool {
 
 		logger: zap.L(),
 		max:    1000,
+		hasher: &core.DefaultTxHasher{},
 	}
 	for _, opt := range opts {
 		p = opt(p)
@@ -67,12 +75,13 @@ func (p *TxPool) ClearPending() {
 
 // Add adds transaction of the mempool. returns any error and returns true if the
 // add was ok
-func (p *TxPool) Add(tx *core.Transaction, hasher core.Hasher[*core.Transaction]) (bool, error) {
+func (p *TxPool) Add(tx *core.Transaction) (bool, error) {
 	if p.pending.Len() == p.max {
 		return false, fmt.Errorf("no more space for pending transactions")
 	}
 
-	txHash := hasher.Hash(tx)
+	tx.SetHasher(p.hasher)
+	txHash := tx.Hash()
 	if p.Contains(txHash) {
 		return false, nil
 	}
@@ -83,11 +92,11 @@ func (p *TxPool) Add(tx *core.Transaction, hasher core.Hasher[*core.Transaction]
 			return false, err
 		}
 		p.logger.Debug("rolling over pool",
-			zap.String("remove", hasher.Hash(first).Prefix()),
-			zap.String("add", hasher.Hash(tx).Prefix()),
+			zap.String("remove", first.Hash().Prefix()),
+			zap.String("add", tx.Hash().Prefix()),
 		)
 
-		p.all.Remove(hasher.Hash(first))
+		p.all.Remove(first.Hash())
 	}
 
 	var rollback error
@@ -143,7 +152,7 @@ func (tm *TxOrderedMap) Contains(h types.Hash) bool {
 }
 
 func (tm *TxOrderedMap) Add(tx *core.Transaction) error {
-	h := tx.Hash(&core.DefaultTxHasher{})
+	h := tx.Hash()
 	tm.lock.Lock()
 	defer tm.lock.Unlock()
 	tm.lookup[h] = tx

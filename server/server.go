@@ -151,7 +151,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	}
 	s := &Server{
 		ServerOpts:  opts,
-		mempool:     NewTxPool(WithLogger(opts.Logger)),
+		mempool:     NewTxPool(WithLogger(opts.Logger), WithHasher(opts.TxHasher)),
 		blockTime:   opts.BlockTime,
 		isValidator: !opts.PrivateKey.IsZero(),
 		rpcChan:     make(chan network.RPC),

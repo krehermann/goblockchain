@@ -103,7 +103,7 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 	}
 	tx.SetCreatedAt(time.Now().UTC())
 
-	isNewTx, err := s.mempool.Add(tx, s.ServerOpts.TxHasher)
+	isNewTx, err := s.mempool.Add(tx)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 
 func (s *Server) broadcastTx(tx *core.Transaction) error {
 	s.logger.Debug("broadcastTx",
-		zap.Any("hash", tx.Hash(&core.DefaultTxHasher{}).Prefix()))
+		zap.Any("hash", tx.Hash().Prefix()))
 
 	msg, err := protocol.NewMessageFromTransaction(tx)
 	if err != nil {

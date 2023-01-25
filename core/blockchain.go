@@ -101,6 +101,7 @@ type Blockchain struct {
 	//store Storager
 
 	store   GenericStorager[*Header, *Block]
+	txStore GenericStorager[types.Hash, *Transaction]
 	headers *headerStore
 
 	validator Validator
@@ -109,7 +110,8 @@ type Blockchain struct {
 	// TODO make State interface
 	contractState *vm.State
 
-	hasher Hasher[*Header]
+	hasher   Hasher[*Header]
+	txHasher Hasher[*Transaction]
 }
 
 type BlockchainOpt func(bc *Blockchain) *Blockchain
@@ -124,10 +126,12 @@ func WithLogger(l *zap.Logger) BlockchainOpt {
 func NewBlockchain(genesis *Block, opts ...BlockchainOpt) (*Blockchain, error) {
 	bc := &Blockchain{
 		headers:       newheaderStore(),
-		store:         NewGenericMemStore[*Header, *Block](), //NewMemStore(),
+		store:         NewGenericMemStore[*Header, *Block](),
+		txStore:       NewGenericMemStore[types.Hash, *Transaction](),
 		logger:        zap.L().Named("blockchain"),
 		contractState: vm.NewState(),
 		hasher:        DefaultBlockHasher{},
+		txHasher:      &DefaultTxHasher{},
 	}
 
 	// this is a bit weird. need to be able to configure the validator
@@ -162,7 +166,7 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 		err := vm.Run()
 		if err != nil {
 			return fmt.Errorf("add block: vm failed to run tx %s, %w",
-				tx.Hash(&DefaultTxHasher{}).Prefix(),
+				tx.Hash().Prefix(),
 				err)
 		}
 		// result is the last thing on the stack
@@ -189,7 +193,6 @@ func (bc *Blockchain) HasBlockAtHeight(h uint32) bool {
 }
 
 func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
-
 	return bc.headers.getAt(height)
 }
 
@@ -208,6 +211,10 @@ func (bc *Blockchain) GetBlockHash(h types.Hash) (*Block, error) {
 		return nil, err
 	}
 	return bc.store.Get(hdr)
+}
+
+func (bc *Blockchain) GetTransaction(h types.Hash) (*Transaction, error) {
+	return bc.txStore.Get(h)
 }
 
 func (bc *Blockchain) addGensisBlock(b *Block) error {
@@ -231,6 +238,17 @@ func (bc *Blockchain) persistBlock(b *Block) error {
 		zap.String("hash", b.Hash(bc.hasher).String()),
 		zap.Any("tx len", len(b.Transactions)),
 	)
-	return bc.store.Put(b.Header, b)
+	err = bc.store.Put(b.Header, b)
+	if err != nil {
+		return nil
+	}
 
+	for _, txn := range b.Transactions {
+		txn.SetHasher(bc.txHasher)
+		err := bc.txStore.Put(txn.Hash(), txn)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

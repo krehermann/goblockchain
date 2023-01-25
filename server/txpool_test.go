@@ -15,15 +15,15 @@ func TestTxPool(t *testing.T) {
 	assert.Equal(t, 0, p.PendingCount())
 
 	tx := core.NewTransaction([]byte("test data"))
-	ok, err := p.Add(tx, &core.DefaultTxHasher{})
+	ok, err := p.Add(tx)
 	assert.True(t, ok)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, p.PendingCount())
 
-	assert.True(t, p.Contains(tx.Hash(&core.DefaultTxHasher{})))
+	assert.True(t, p.Contains(tx.Hash()))
 
 	// no dupes
-	ok, err = p.Add(tx, &core.DefaultTxHasher{})
+	ok, err = p.Add(tx)
 	assert.False(t, ok)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, p.PendingCount())
@@ -44,7 +44,7 @@ func TestTxPool_Add(t *testing.T) {
 		d := fmt.Sprintf("tx-%d", i)
 		tx := core.NewTransaction([]byte(d))
 		tx.SetCreatedAt(time.Now())
-		ok, err := p.Add(tx, &core.DefaultTxHasher{})
+		ok, err := p.Add(tx)
 		assert.True(t, ok)
 		assert.NoError(t, err, "loop %d", i)
 	}
@@ -58,8 +58,8 @@ func TestTxPool_Add(t *testing.T) {
 	// overflow pending
 	tx := core.NewTransaction([]byte("overflow"))
 	tx.SetCreatedAt(time.Now())
-	p.Add(tx, &core.DefaultTxHasher{})
-	added, err := p.Add(tx, &core.DefaultTxHasher{})
+	p.Add(tx)
+	added, err := p.Add(tx)
 	assert.False(t, added)
 	assert.Error(t, err)
 
@@ -67,19 +67,19 @@ func TestTxPool_Add(t *testing.T) {
 	want, err := p.all.txns.Get(1)
 	assert.NoError(t, err)
 	p.ClearPending()
-	ok, err := p.Add(core.NewTransaction([]byte("whatevs")), &core.DefaultTxHasher{})
+	ok, err := p.Add(core.NewTransaction([]byte("whatevs")))
 	assert.True(t, ok)
 	assert.NoError(t, err)
 	got, err := p.all.First()
 	assert.NoError(t, err)
 	assert.Equal(t, want, got, " got %s != want %s",
-		got.Hash(&core.DefaultTxHasher{}).Prefix(),
-		want.Hash(&core.DefaultTxHasher{}).Prefix())
+		got.Hash().Prefix(),
+		want.Hash().Prefix())
 	// dedup test
 
 	p = NewTxPool(MaxPoolDepth(2))
 	for i := 0; i < 4; i += 1 {
-		added, err := p.Add(core.NewTransaction([]byte("foo")), &core.DefaultTxHasher{})
+		added, err := p.Add(core.NewTransaction([]byte("foo")))
 		assert.NoError(t, err)
 		if i == 0 {
 			assert.True(t, added)
