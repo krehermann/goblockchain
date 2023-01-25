@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -97,4 +98,24 @@ func calculateDataHash(txns []*Transaction) (types.Hash, error) {
 	}
 	hash = sha256.Sum256(buf.Bytes())
 	return hash, nil
+}
+
+// Override the default marshaler so that hash is included
+func (txn *Transaction) MarshalJSON() ([]byte, error) {
+
+	type anon struct {
+		Data      []byte
+		From      crypto.PublicKey
+		Signature *crypto.Signature
+		Hash      types.Hash
+	}
+
+	marshalMe := anon{
+		Data:      txn.Data,
+		From:      txn.From,
+		Signature: txn.Signature,
+		Hash:      txn.hash,
+	}
+
+	return json.Marshal(&marshalMe)
 }
