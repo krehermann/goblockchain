@@ -35,7 +35,7 @@ validationLoop:
 	}
 }
 
-func (s *Server) runRPCProcessor(ctx context.Context) {
+func (s *Server) processChannels(ctx context.Context) {
 	s.logger.Info("starting rpc handler loop")
 loop:
 	for {
@@ -49,6 +49,11 @@ loop:
 			err = s.ProcessMessage(decodedMsg)
 			if err != nil {
 				s.errChan <- fmt.Errorf("handle rpc: failed to process decoded message: %w", err)
+			}
+		case tx := <-s.apiTxCh:
+			err := s.handleTransaction(tx)
+			if err != nil {
+				s.errChan <- fmt.Errorf("error handling tx from api server: %w", err)
 			}
 		case <-s.quitChan:
 			s.logger.Info("handleRpcs received quit signal")
