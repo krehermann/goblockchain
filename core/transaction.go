@@ -25,14 +25,20 @@ type Transaction struct {
 	hash types.Hash
 	// keep track for ordering
 	createdAt time.Time
+
+	hasher Hasher[*Transaction]
 }
 
 func NewTransaction(data []byte) *Transaction {
 	return &Transaction{
-		Data: data,
+		Data:   data,
+		hasher: &DefaultTxHasher{},
 	}
 }
 
+func (txn *Transaction) SetHasher(hasher Hasher[*Transaction]) {
+	txn.hasher = hasher
+}
 func (txn *Transaction) SetCreatedAt(t time.Time) *Transaction {
 	txn.createdAt = t
 	return txn
@@ -54,9 +60,9 @@ func (txn *Transaction) Decode(dec Decoder[*Transaction]) error {
 }
 
 // Hash caches the first call. Subsequent changes to input Hasher have no effect
-func (txn *Transaction) Hash(hasher Hasher[*Transaction]) types.Hash {
+func (txn *Transaction) Hash() types.Hash {
 	if txn.hash.IsZero() {
-		txn.hash = hasher.Hash(txn)
+		txn.hash = txn.hasher.Hash(txn)
 	}
 	return txn.hash
 }
